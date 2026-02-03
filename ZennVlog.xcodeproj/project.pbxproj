@@ -10,9 +10,35 @@
 		6D8D85542F25460000905F3C /* ZennVlog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZennVlog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		6D8D85702F25460000905F3C /* Exceptions for "ZennVlog" folder in "ZennVlog" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			buildFileSettings = (
+				{
+					fileType = "text.md";
+					settings = {
+						ATTRIBUTES = ();
+					};
+				},
+			);
+			membershipExceptions = (
+				"Features/Chat/CLAUDE.md",
+				"Features/Home/CLAUDE.md",
+				"Features/Preview/CLAUDE.md",
+				"Features/ProjectList/CLAUDE.md",
+				"Features/Recording/CLAUDE.md",
+				"Features/Share/CLAUDE.md",
+			);
+			target = 6D8D85532F25460000905F3C /* ZennVlog */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		6D8D85562F25460000905F3C /* ZennVlog */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				6D8D85702F25460000905F3C /* Exceptions for "ZennVlog" folder in "ZennVlog" target */,
+			);
 			path = ZennVlog;
 			sourceTree = "<group>";
 		};
