@@ -1,14 +1,14 @@
 import Foundation
 
-final class MockGeminiRepository: GeminiRepositoryProtocol, @unchecked Sendable {
+actor MockGeminiRepository: GeminiRepositoryProtocol {
 
     // MARK: - Properties
 
-    private var conversationState: ConversationState = .initial
+    private var stateIndex: Int = 0
 
     // MARK: - GeminiRepositoryProtocol
 
-    func sendMessage(_ message: String, history: [ChatMessage]) async throws -> GeminiChatResponse {
+    func sendMessage(_ message: String, history: [ChatMessageDTO]) async throws -> GeminiChatResponse {
         try await simulateNetworkDelay()
         return generateMockResponse(for: message, history: history)
     }
@@ -34,11 +34,13 @@ final class MockGeminiRepository: GeminiRepositoryProtocol, @unchecked Sendable 
         try await Task.sleep(nanoseconds: 2_000_000_000)
     }
 
-    private func generateMockResponse(for message: String, history: [ChatMessage]) -> GeminiChatResponse {
+    private func generateMockResponse(for message: String, history: [ChatMessageDTO]) -> GeminiChatResponse {
         let lowerMessage = message.lowercased()
 
-        if history.isEmpty || conversationState == .initial {
-            conversationState = .askingTheme
+        // stateIndex: 0=initial, 1=askingTheme, 2=askingStructure, 3=suggestingTemplate, 4=suggestingBGM, 5=complete
+
+        if history.isEmpty || stateIndex == 0 {
+            stateIndex = 1
             return GeminiChatResponse(
                 text: "こんにちは！Vlog作成をお手伝いします。\n\nまず、どんなテーマのVlogを作りたいですか？\n例：日常、旅行、グルメ、趣味など",
                 suggestedTemplate: nil,
@@ -46,8 +48,8 @@ final class MockGeminiRepository: GeminiRepositoryProtocol, @unchecked Sendable 
             )
         }
 
-        if conversationState == .askingTheme {
-            conversationState = .askingStructure
+        if stateIndex == 1 {
+            stateIndex = 2
             return GeminiChatResponse(
                 text: "素敵ですね！\n\n構成は決まっていますか？決まっていなければ、いくつかテンプレートを提案できます。",
                 suggestedTemplate: nil,
@@ -56,7 +58,7 @@ final class MockGeminiRepository: GeminiRepositoryProtocol, @unchecked Sendable 
         }
 
         if lowerMessage.contains("いいえ") || lowerMessage.contains("決まってない") || lowerMessage.contains("提案") {
-            conversationState = .suggestingTemplate
+            stateIndex = 3
             let template = TemplateDTO(
                 id: "daily-vlog",
                 name: "1日のVlog",
@@ -79,8 +81,8 @@ final class MockGeminiRepository: GeminiRepositoryProtocol, @unchecked Sendable 
         }
 
         if lowerMessage.contains("はい") || lowerMessage.contains("いい") || lowerMessage.contains("ok") {
-            if conversationState == .suggestingTemplate {
-                conversationState = .suggestingBGM
+            if stateIndex == 3 {
+                stateIndex = 4
                 let bgm = BGMTrack(
                     id: "bgm-001",
                     title: "爽やかな朝",
@@ -97,8 +99,8 @@ final class MockGeminiRepository: GeminiRepositoryProtocol, @unchecked Sendable 
                 )
             }
 
-            if conversationState == .suggestingBGM {
-                conversationState = .complete
+            if stateIndex == 4 {
+                stateIndex = 5
                 return GeminiChatResponse(
                     text: "準備が整いました！\n\n撮影を始めましょう。各セグメントの説明に沿って動画を撮影してください。",
                     suggestedTemplate: nil,
@@ -113,15 +115,4 @@ final class MockGeminiRepository: GeminiRepositoryProtocol, @unchecked Sendable 
             suggestedBGM: nil
         )
     }
-}
-
-// MARK: - ConversationState
-
-private enum ConversationState {
-    case initial
-    case askingTheme
-    case askingStructure
-    case suggestingTemplate
-    case suggestingBGM
-    case complete
 }

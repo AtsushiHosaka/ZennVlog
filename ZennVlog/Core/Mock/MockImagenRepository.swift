@@ -1,7 +1,7 @@
 import Foundation
 import UIKit
 
-final class MockImagenRepository: ImagenRepositoryProtocol, @unchecked Sendable {
+final class MockImagenRepository: ImagenRepositoryProtocol, Sendable {
 
     // MARK: - ImagenRepositoryProtocol
 

@@ -1,6 +1,7 @@
 import Foundation
 
-final class MockProjectRepository: ProjectRepositoryProtocol, @unchecked Sendable {
+@MainActor
+final class MockProjectRepository: ProjectRepositoryProtocol {
 
     // MARK: - Properties
 

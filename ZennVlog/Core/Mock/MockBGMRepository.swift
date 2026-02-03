@@ -1,6 +1,6 @@
 import Foundation
 
-final class MockBGMRepository: BGMRepositoryProtocol, @unchecked Sendable {
+final class MockBGMRepository: BGMRepositoryProtocol, Sendable {
 
     // MARK: - Properties
 

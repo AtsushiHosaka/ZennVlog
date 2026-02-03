@@ -1,8 +1,6 @@
 import Foundation
-import Observation
 
 @MainActor
-@Observable
 final class DIContainer {
 
     // MARK: - Singleton
@@ -13,6 +11,14 @@ final class DIContainer {
 
     let useMock: Bool
 
+    // MARK: - Cached Repositories
+
+    let projectRepository: any ProjectRepositoryProtocol
+    let templateRepository: any TemplateRepositoryProtocol
+    let bgmRepository: any BGMRepositoryProtocol
+    let geminiRepository: any GeminiRepositoryProtocol
+    let imagenRepository: any ImagenRepositoryProtocol
+
     // MARK: - Init
 
     init(useMock: Bool = false) {
@@ -21,33 +27,12 @@ final class DIContainer {
         #else
         self.useMock = false
         #endif
-    }
 
-    // MARK: - Repositories
-
-    var projectRepository: any ProjectRepositoryProtocol {
-        useMock ? MockProjectRepository() : MockProjectRepository()
-        // 本実装後: useMock ? MockProjectRepository() : ProjectRepository()
-    }
-
-    var templateRepository: any TemplateRepositoryProtocol {
-        useMock ? MockTemplateRepository() : MockTemplateRepository()
-        // 本実装後: useMock ? MockTemplateRepository() : TemplateRepository()
-    }
-
-    var bgmRepository: any BGMRepositoryProtocol {
-        useMock ? MockBGMRepository() : MockBGMRepository()
-        // 本実装後: useMock ? MockBGMRepository() : BGMRepository()
-    }
-
-    var geminiRepository: any GeminiRepositoryProtocol {
-        useMock ? MockGeminiRepository() : MockGeminiRepository()
-        // 本実装後: useMock ? MockGeminiRepository() : GeminiRepository()
-    }
-
-    var imagenRepository: any ImagenRepositoryProtocol {
-        useMock ? MockImagenRepository() : MockImagenRepository()
-        // 本実装後: useMock ? MockImagenRepository() : ImagenRepository()
+        self.projectRepository = MockProjectRepository()
+        self.templateRepository = MockTemplateRepository()
+        self.bgmRepository = MockBGMRepository()
+        self.geminiRepository = MockGeminiRepository()
+        self.imagenRepository = MockImagenRepository()
     }
 }
 

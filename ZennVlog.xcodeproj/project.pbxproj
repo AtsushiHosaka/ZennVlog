@@ -13,21 +13,13 @@
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
 		6D8D85702F25460000905F3C /* Exceptions for "ZennVlog" folder in "ZennVlog" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			buildFileSettings = (
-				{
-					fileType = "text.md";
-					settings = {
-						ATTRIBUTES = ();
-					};
-				},
-			);
 			membershipExceptions = (
-				"Features/Chat/CLAUDE.md",
-				"Features/Home/CLAUDE.md",
-				"Features/Preview/CLAUDE.md",
-				"Features/ProjectList/CLAUDE.md",
-				"Features/Recording/CLAUDE.md",
-				"Features/Share/CLAUDE.md",
+				Features/Chat/CLAUDE.md,
+				Features/Home/CLAUDE.md,
+				Features/Preview/CLAUDE.md,
+				Features/ProjectList/CLAUDE.md,
+				Features/Recording/CLAUDE.md,
+				Features/Share/CLAUDE.md,
 			);
 			target = 6D8D85532F25460000905F3C /* ZennVlog */;
 		};

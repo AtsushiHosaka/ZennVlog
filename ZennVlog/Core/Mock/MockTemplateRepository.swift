@@ -1,6 +1,6 @@
 import Foundation
 
-final class MockTemplateRepository: TemplateRepositoryProtocol, @unchecked Sendable {
+final class MockTemplateRepository: TemplateRepositoryProtocol, Sendable {
 
     // MARK: - Properties
 
