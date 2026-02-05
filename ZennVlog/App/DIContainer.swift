@@ -19,6 +19,11 @@ final class DIContainer {
     let geminiRepository: any GeminiRepositoryProtocol
     let imagenRepository: any ImagenRepositoryProtocol
 
+    // MARK: - Services
+
+    let photoLibraryService: any PhotoLibraryServiceProtocol
+    let activityControllerService: any ActivityControllerServiceProtocol
+
     // MARK: - Init
 
     init(useMock: Bool = false) {
@@ -33,6 +38,14 @@ final class DIContainer {
         self.bgmRepository = MockBGMRepository()
         self.geminiRepository = MockGeminiRepository()
         self.imagenRepository = MockImagenRepository()
+
+        if self.useMock {
+            self.photoLibraryService = MockPhotoLibraryService()
+            self.activityControllerService = MockActivityControllerService()
+        } else {
+            self.photoLibraryService = RealPhotoLibraryService()
+            self.activityControllerService = RealActivityControllerService()
+        }
     }
 }
 
