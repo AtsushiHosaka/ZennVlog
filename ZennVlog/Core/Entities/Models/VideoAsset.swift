@@ -8,7 +8,6 @@ final class VideoAsset {
     var localFileURL: String
     var duration: Double
     var trimStartSeconds: Double = 0.0
-    var trimEndSeconds: Double = 0.0
     var createdAt: Date
 
     init(
@@ -17,7 +16,6 @@ final class VideoAsset {
         localFileURL: String = "",
         duration: Double = 0,
         trimStartSeconds: Double = 0.0,
-        trimEndSeconds: Double = 0.0,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -25,7 +23,6 @@ final class VideoAsset {
         self.localFileURL = localFileURL
         self.duration = duration
         self.trimStartSeconds = trimStartSeconds
-        self.trimEndSeconds = trimEndSeconds
         self.createdAt = createdAt
     }
 }

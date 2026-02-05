@@ -79,7 +79,8 @@
 ### VideoAsset拡張
 - `segmentOrder: Int?` - nil の場合はストック動画
 - `trimStartSeconds: Double` - トリム開始時刻（秒、デフォルト0.0）
-- `trimEndSeconds: Double` - トリム終了時刻（秒、デフォルト0.0）
+  - セグメントの長さは固定なので、開始位置のみ指定すればよい
+  - 実際に使用する範囲 = `trimStartSeconds` から `trimStartSeconds + セグメント長` まで
 
 ### Project - Segment - VideoAsset の関係
 - Project.template.segments: テンプレートのセグメント一覧（order: 0, 1, 2, ...）
@@ -202,11 +203,14 @@ TrimEditorView表示
   ↓
 ユーザーがトリム範囲設定
   ↓
-TrimVideoUseCase.execute(videoURL, startSeconds, endSeconds)
+TrimVideoUseCase.execute(videoURL, startSeconds, segmentDuration)
   ↓
-VideoAsset作成（trimStartSeconds, trimEndSeconds設定）
+VideoAsset作成（trimStartSeconds設定）
   ↓
 SaveVideoAssetUseCase
+
+**重要**: セグメントの長さは固定なので、trimStartSecondsのみ指定。
+実際の切り出し範囲 = trimStartSeconds から trimStartSeconds + segmentDuration まで
 ```
 
 ### Gemini API動画要約
