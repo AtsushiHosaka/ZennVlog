@@ -4,22 +4,28 @@ import SwiftData
 @Model
 final class VideoAsset {
     var id: UUID
-    var segmentOrder: Int
+    var segmentOrder: Int?
     var localFileURL: String
     var duration: Double
+    var trimStartSeconds: Double = 0.0
+    var trimEndSeconds: Double = 0.0
     var createdAt: Date
 
     init(
         id: UUID = UUID(),
-        segmentOrder: Int = 0,
+        segmentOrder: Int? = nil,
         localFileURL: String = "",
         duration: Double = 0,
+        trimStartSeconds: Double = 0.0,
+        trimEndSeconds: Double = 0.0,
         createdAt: Date = Date()
     ) {
         self.id = id
         self.segmentOrder = segmentOrder
         self.localFileURL = localFileURL
         self.duration = duration
+        self.trimStartSeconds = trimStartSeconds
+        self.trimEndSeconds = trimEndSeconds
         self.createdAt = createdAt
     }
 }
