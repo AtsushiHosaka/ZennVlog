@@ -2,10 +2,6 @@ import Foundation
 
 actor MockGeminiRepository: GeminiRepositoryProtocol {
 
-    // MARK: - Properties
-
-    private var stateIndex: Int = 0
-
     // MARK: - GeminiRepositoryProtocol
 
     func sendMessage(_ message: String, history: [ChatMessageDTO]) async throws -> GeminiChatResponse {
@@ -34,13 +30,46 @@ actor MockGeminiRepository: GeminiRepositoryProtocol {
         try await Task.sleep(nanoseconds: 2_000_000_000)
     }
 
+    /// 会話履歴から現在の状態を推測
+    /// 0=initial, 1=askingTheme, 2=askingStructure, 3=suggestingTemplate, 4=suggestingBGM, 5=complete
+    private func detectStateFromHistory(_ history: [ChatMessageDTO]) -> Int {
+        // 最後のassistantメッセージを見て状態を判定
+        guard let lastAssistantMessage = history.last(where: { $0.role == .assistant }) else {
+            return history.isEmpty ? 0 : 1
+        }
+
+        let content = lastAssistantMessage.content.lowercased()
+
+        // BGM提案後（assistant が BGM を提案した）
+        if content.contains("bgmは") || content.contains("bgmを提案") {
+            return 4
+        }
+
+        // テンプレート提案後（assistant がテンプレートを提案した）
+        if content.contains("こちらのテンプレート") || content.contains("テンプレートを提案") {
+            return 3
+        }
+
+        // 構成確認後（assistant が構成を聞いた）
+        if content.contains("構成は決まって") {
+            return 2
+        }
+
+        // テーマを聞いた直後
+        if content.contains("どんなテーマ") || content.contains("テーマの") {
+            return 1
+        }
+
+        // 初回挨拶後（履歴がある）
+        return 1
+    }
+
     private func generateMockResponse(for message: String, history: [ChatMessageDTO]) -> GeminiChatResponse {
         let lowerMessage = message.lowercased()
+        let stateIndex = detectStateFromHistory(history)
 
-        // stateIndex: 0=initial, 1=askingTheme, 2=askingStructure, 3=suggestingTemplate, 4=suggestingBGM, 5=complete
-
-        if history.isEmpty || stateIndex == 0 {
-            stateIndex = 1
+        // 初回挨拶
+        if history.isEmpty {
             return GeminiChatResponse(
                 text: "こんにちは！Vlog作成をお手伝いします。\n\nまず、どんなテーマのVlogを作りたいですか？\n例：日常、旅行、グルメ、趣味など",
                 suggestedTemplate: nil,
@@ -48,8 +77,8 @@ actor MockGeminiRepository: GeminiRepositoryProtocol {
             )
         }
 
+        // テーマを受け取った後 → 構成確認
         if stateIndex == 1 {
-            stateIndex = 2
             return GeminiChatResponse(
                 text: "素敵ですね！\n\n構成は決まっていますか？決まっていなければ、いくつかテンプレートを提案できます。",
                 suggestedTemplate: nil,
@@ -57,8 +86,8 @@ actor MockGeminiRepository: GeminiRepositoryProtocol {
             )
         }
 
-        if lowerMessage.contains("いいえ") || lowerMessage.contains("決まってない") || lowerMessage.contains("提案") {
-            stateIndex = 3
+        // テンプレート提案を依頼された
+        if stateIndex == 2 && (lowerMessage.contains("いいえ") || lowerMessage.contains("決まってない") || lowerMessage.contains("提案")) {
             let template = TemplateDTO(
                 id: "daily-vlog",
                 name: "1日のVlog",
@@ -80,33 +109,31 @@ actor MockGeminiRepository: GeminiRepositoryProtocol {
             )
         }
 
-        if lowerMessage.contains("はい") || lowerMessage.contains("いい") || lowerMessage.contains("ok") {
-            if stateIndex == 3 {
-                stateIndex = 4
-                let bgm = BGMTrack(
-                    id: "bgm-001",
-                    title: "爽やかな朝",
-                    description: "明るく前向きなVlogに最適",
-                    genre: "pop",
-                    duration: 120,
-                    storageUrl: "gs://bucket/bgm/morning.m4a",
-                    tags: ["明るい", "爽やか", "日常"]
-                )
-                return GeminiChatResponse(
-                    text: "テンプレートが決まりました！\n\nBGMは「爽やかな朝」がおすすめです。明るく前向きな雰囲気にぴったりですよ。\n\nこのBGMでよろしいですか？",
-                    suggestedTemplate: nil,
-                    suggestedBGM: bgm
-                )
-            }
+        // テンプレート承認 → BGM提案
+        if stateIndex == 3 && (lowerMessage.contains("はい") || lowerMessage.contains("いい") || lowerMessage.contains("ok") || lowerMessage.contains("お願い")) {
+            let bgm = BGMTrack(
+                id: "bgm-001",
+                title: "爽やかな朝",
+                description: "明るく前向きなVlogに最適",
+                genre: "pop",
+                duration: 120,
+                storageUrl: "gs://bucket/bgm/morning.m4a",
+                tags: ["明るい", "爽やか", "日常"]
+            )
+            return GeminiChatResponse(
+                text: "テンプレートが決まりました！\n\nBGMは「爽やかな朝」がおすすめです。明るく前向きな雰囲気にぴったりですよ。\n\nこのBGMでよろしいですか？",
+                suggestedTemplate: nil,
+                suggestedBGM: bgm
+            )
+        }
 
-            if stateIndex == 4 {
-                stateIndex = 5
-                return GeminiChatResponse(
-                    text: "準備が整いました！\n\n撮影を始めましょう。各セグメントの説明に沿って動画を撮影してください。",
-                    suggestedTemplate: nil,
-                    suggestedBGM: nil
-                )
-            }
+        // BGM承認 → 撮影開始
+        if stateIndex == 4 && (lowerMessage.contains("はい") || lowerMessage.contains("いい") || lowerMessage.contains("ok") || lowerMessage.contains("お願い")) {
+            return GeminiChatResponse(
+                text: "準備が整いました！\n\n撮影を始めましょう。各セグメントの説明に沿って動画を撮影してください。",
+                suggestedTemplate: nil,
+                suggestedBGM: nil
+            )
         }
 
         return GeminiChatResponse(

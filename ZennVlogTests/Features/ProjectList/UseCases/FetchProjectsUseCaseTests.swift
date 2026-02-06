@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import ZennVlog
 
@@ -47,7 +48,7 @@ struct FetchProjectsUseCaseTests {
         let useCase = FetchProjectsUseCase(repository: mockRepository)
 
         // When & Then
-        #expect(throws: ProjectRepositoryError.self) {
+        await #expect(throws: ProjectRepositoryError.self) {
             try await useCase.execute()
         }
     }
@@ -180,7 +181,7 @@ struct FetchProjectsUseCaseTests {
     @Test("大量のプロジェクト50件でもソートされる")
     func fetchProjectsSortsLargeDataset() async throws {
         // Given
-        let mockRepository = MockProjectRepository()
+        let mockRepository = MockProjectRepository(emptyForTesting: true)
         let baseDate = Date()
 
         for i in 0..<50 {
@@ -212,7 +213,7 @@ struct FetchProjectsUseCaseTests {
     @Test("異なるステータスが混在してもソートされる")
     func fetchProjectsSortsMixedStatuses() async throws {
         // Given
-        let mockRepository = MockProjectRepository()
+        let mockRepository = MockProjectRepository(emptyForTesting: true)
         let now = Date()
 
         let chattingProject = Project(

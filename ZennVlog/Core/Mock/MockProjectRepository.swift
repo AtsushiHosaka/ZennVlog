@@ -6,26 +6,44 @@ final class MockProjectRepository: ProjectRepositoryProtocol {
     // MARK: - Properties
 
     private var projects: [Project] = []
+    var shouldThrowError: Bool = false
 
     // MARK: - Init
 
-    init() {
-        setupMockData()
+    init(emptyForTesting: Bool = false) {
+        if !emptyForTesting {
+            setupMockData()
+        }
+    }
+
+    // MARK: - Testing Helpers
+
+    func clearAll() {
+        projects.removeAll()
     }
 
     // MARK: - ProjectRepositoryProtocol
 
     func fetchAll() async throws -> [Project] {
+        if shouldThrowError {
+            throw ProjectRepositoryError.fetchFailed(underlying: NSError(domain: "Mock", code: -1))
+        }
         try await simulateNetworkDelay()
         return projects
     }
 
     func fetch(by id: UUID) async throws -> Project? {
+        if shouldThrowError {
+            throw ProjectRepositoryError.fetchFailed(underlying: NSError(domain: "Mock", code: -1))
+        }
         try await simulateNetworkDelay()
         return projects.first { $0.id == id }
     }
 
     func save(_ project: Project) async throws {
+        if shouldThrowError {
+            throw ProjectRepositoryError.saveFailed(underlying: NSError(domain: "Mock", code: -1))
+        }
         try await simulateNetworkDelay()
         if let index = projects.firstIndex(where: { $0.id == project.id }) {
             projects[index] = project
@@ -35,6 +53,9 @@ final class MockProjectRepository: ProjectRepositoryProtocol {
     }
 
     func delete(_ project: Project) async throws {
+        if shouldThrowError {
+            throw ProjectRepositoryError.deleteFailed(underlying: NSError(domain: "Mock", code: -1))
+        }
         try await simulateNetworkDelay()
         projects.removeAll { $0.id == project.id }
     }

@@ -1,15 +1,21 @@
-import SwiftUI
+import Observation
 import Photos
+import SwiftUI
 
-/// Share機能のシステム統合レイヤー
-/// Note: ViewModelでもUseCaseでもなく、テスト可能なシステム統合ラッパー
 @MainActor
-final class ShareSystem: ObservableObject {
-    // MARK: - Published Properties
+@Observable
+final class ShareViewModel {
+    // MARK: - Data Properties
 
-    @Published var isSaving: Bool = false
-    @Published var saveSuccess: Bool = false
-    @Published var errorMessage: String?
+    let project: Project
+    let exportedVideoURL: URL
+    var thumbnailImage: UIImage?
+
+    // MARK: - State Properties
+
+    var isSaving: Bool = false
+    var saveSuccess: Bool = false
+    var errorMessage: String?
 
     // MARK: - Dependencies
 
@@ -19,18 +25,25 @@ final class ShareSystem: ObservableObject {
     // MARK: - Initialization
 
     init(
+        project: Project,
+        exportedVideoURL: URL,
+        thumbnailImage: UIImage? = nil,
         photoLibrary: PhotoLibraryServiceProtocol,
         activityController: ActivityControllerServiceProtocol
     ) {
+        self.project = project
+        self.exportedVideoURL = exportedVideoURL
+        self.thumbnailImage = thumbnailImage
         self.photoLibrary = photoLibrary
         self.activityController = activityController
     }
 
     // MARK: - Public Methods
 
-    /// 動画を写真ライブラリに保存
-    /// - Parameter videoURL: 保存する動画のURL
-    /// - Throws: 権限エラーまたは保存エラー
+    func saveToPhotoLibrary() async throws {
+        try await saveToPhotoLibrary(videoURL: exportedVideoURL)
+    }
+
     func saveToPhotoLibrary(videoURL: URL) async throws {
         // 状態をリセット
         isSaving = true
@@ -45,10 +58,11 @@ final class ShareSystem: ObservableObject {
             // 権限チェック
             let status = await photoLibrary.requestAuthorization()
 
-            guard status == .authorized else {
+            // iOS 14以降は .limited も許可（ユーザーが選択した写真へのアクセスは制限されるが、書き込みは可能）
+            guard status == .authorized || status == .limited else {
                 let message = createAuthorizationErrorMessage(for: status)
                 errorMessage = message
-                throw ShareSystemError.authorizationDenied(message)
+                throw ShareViewModelError.authorizationDenied(message)
             }
 
             // 動画を保存
@@ -57,7 +71,7 @@ final class ShareSystem: ObservableObject {
             // 成功状態を更新
             saveSuccess = true
 
-        } catch let error as ShareSystemError {
+        } catch let error as ShareViewModelError {
             // 既に設定されたエラーメッセージを保持
             throw error
         } catch {
@@ -67,11 +81,10 @@ final class ShareSystem: ObservableObject {
         }
     }
 
-    /// SNSに動画を共有
-    /// - Parameters:
-    ///   - videoURL: 共有する動画のURL
-    ///   - thumbnail: オプションのサムネイル画像
-    /// - Returns: 共有が完了した場合true、キャンセルされた場合false
+    func shareToSNS() async throws -> Bool {
+        try await shareToSNS(videoURL: exportedVideoURL, thumbnail: thumbnailImage)
+    }
+
     func shareToSNS(videoURL: URL, thumbnail: UIImage? = nil) async throws -> Bool {
         var items: [Any] = [videoURL]
 
@@ -88,9 +101,6 @@ final class ShareSystem: ObservableObject {
 
     // MARK: - Private Methods
 
-    /// 権限ステータスに応じたエラーメッセージを生成
-    /// - Parameter status: 権限ステータス
-    /// - Returns: エラーメッセージ
     private func createAuthorizationErrorMessage(for status: PHAuthorizationStatus) -> String {
         switch status {
         case .denied, .restricted:
@@ -107,7 +117,7 @@ final class ShareSystem: ObservableObject {
 
 // MARK: - Errors
 
-enum ShareSystemError: Error, LocalizedError {
+enum ShareViewModelError: Error, LocalizedError {
     case authorizationDenied(String)
 
     var errorDescription: String? {

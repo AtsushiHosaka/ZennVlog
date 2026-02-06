@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import ZennVlog
 
@@ -9,7 +10,7 @@ struct FetchDashboardUseCaseTests {
     let mockRepository: MockProjectRepository
 
     init() async {
-        mockRepository = MockProjectRepository()
+        mockRepository = MockProjectRepository(emptyForTesting: true)
         useCase = FetchDashboardUseCase(repository: mockRepository)
     }
 
@@ -355,8 +356,10 @@ struct FetchDashboardUseCaseTests {
     @Test("segmentOrderがnilのVideoAssetは進捗にカウントしない")
     func segmentOrderがnilのVideoAssetは進捗にカウントしない() async throws {
         // Given: segmentOrderがnilのVideoAsset（ストック動画）を含む
+        // 2セグメントのうち1つだけ撮影済み（未撮影があるので進行中に含まれる）
         let template = Template(segments: [
-            Segment(order: 0, startSeconds: 0, endSeconds: 5, segmentDescription: "オープニング")
+            Segment(order: 0, startSeconds: 0, endSeconds: 5, segmentDescription: "オープニング"),
+            Segment(order: 1, startSeconds: 5, endSeconds: 10, segmentDescription: "エンディング")
         ])
 
         let project = Project(
@@ -377,5 +380,6 @@ struct FetchDashboardUseCaseTests {
         // Then: ストック動画は進捗にカウントされない
         let inProgress = try #require(result.inProgressProjects.first { $0.name == "ストック動画あり" })
         #expect(inProgress.completedSegments == 1) // セグメント0のみ
+        #expect(inProgress.totalSegments == 2)
     }
 }
