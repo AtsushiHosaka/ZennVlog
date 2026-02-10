@@ -122,6 +122,10 @@ struct ChatView: View {
                         loadingIndicator
                     }
 
+                    if viewModel.isAnalyzingVideo {
+                        videoAnalysisIndicator
+                    }
+
                     // Template Preview
                     if let template = viewModel.selectedTemplate {
                         templatePreview(template)
@@ -166,6 +170,19 @@ struct ChatView: View {
             .background(Color.gray.opacity(0.15))
             .clipShape(RoundedRectangle(cornerRadius: 18))
 
+            Spacer()
+        }
+        .padding(.horizontal)
+        .padding(.leading, 40)
+    }
+
+    @ViewBuilder
+    private var videoAnalysisIndicator: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+            Text("添付動画を解析中...")
+                .font(.caption)
+                .foregroundColor(.secondary)
             Spacer()
         }
         .padding(.horizontal)

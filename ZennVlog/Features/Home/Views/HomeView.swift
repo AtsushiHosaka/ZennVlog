@@ -79,8 +79,23 @@ struct HomeView: View {
                     syncChatHistoryUseCase: SyncChatHistoryUseCase(),
                     initializeChatSessionUseCase: InitializeChatSessionUseCase()
                 )
-                ChatView(viewModel: chatViewModel) { _, _ in
-                    viewModel.dismissChat()
+                ChatView(viewModel: chatViewModel) { template, bgm in
+                    Task {
+                        await viewModel.handleTemplateConfirmed(template: template, bgm: bgm)
+                    }
+                }
+            }
+            .navigationDestination(isPresented: $viewModel.showRecording) {
+                if let project = viewModel.projectForRecording {
+                    let container = DIContainer.shared
+                    RecordingView(viewModel: RecordingViewModel(
+                        project: project,
+                        saveVideoAssetUseCase: SaveVideoAssetUseCase(repository: container.projectRepository),
+                        generateGuideImageUseCase: GenerateGuideImageUseCase(repository: container.imagenRepository),
+                        analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
+                        trimVideoUseCase: TrimVideoUseCase(),
+                        deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository)
+                    ))
                 }
             }
         }
@@ -92,13 +107,21 @@ struct HomeView: View {
 #Preview {
     let container = DIContainer.preview
     let useCase = FetchDashboardUseCase(repository: container.projectRepository)
-    let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+    let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: container.projectRepository)
+    let viewModel = HomeViewModel(
+        fetchDashboardUseCase: useCase,
+        createProjectFromTemplateUseCase: createProjectUseCase
+    )
     return HomeView(viewModel: viewModel)
 }
 
 #Preview("空の状態") {
     let repository = MockProjectRepository(emptyForTesting: true)
     let useCase = FetchDashboardUseCase(repository: repository)
-    let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+    let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: repository)
+    let viewModel = HomeViewModel(
+        fetchDashboardUseCase: useCase,
+        createProjectFromTemplateUseCase: createProjectUseCase
+    )
     return HomeView(viewModel: viewModel)
 }

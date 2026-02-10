@@ -13,7 +13,8 @@ struct HomeViewModelTests {
         // Given
         let mockRepository = MockProjectRepository(emptyForTesting: true)
         let useCase = FetchDashboardUseCase(repository: mockRepository)
-        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // Then
         #expect(viewModel.inProgressProjects.isEmpty)
@@ -32,7 +33,8 @@ struct HomeViewModelTests {
         // Given
         let mockRepository = MockProjectRepository()
         let useCase = FetchDashboardUseCase(repository: mockRepository)
-        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When
         await viewModel.loadDashboard()
@@ -47,7 +49,8 @@ struct HomeViewModelTests {
         // Given
         let mockRepository = MockProjectRepository()
         let useCase = FetchDashboardUseCase(repository: mockRepository)
-        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When
         let loadTask = Task {
@@ -66,7 +69,8 @@ struct HomeViewModelTests {
         // Given
         let mockRepository = MockProjectRepository()
         let useCase = FetchDashboardUseCase(repository: mockRepository)
-        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When
         await viewModel.loadDashboard()
@@ -81,7 +85,8 @@ struct HomeViewModelTests {
         let mockRepository = MockProjectRepository(emptyForTesting: true)
         mockRepository.shouldThrowError = true
         let useCase = FetchDashboardUseCase(repository: mockRepository)
-        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When
         await viewModel.loadDashboard()
@@ -96,7 +101,8 @@ struct HomeViewModelTests {
         // Given
         let mockRepository = MockProjectRepository()
         let useCase = FetchDashboardUseCase(repository: mockRepository)
-        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // 最初にエラー状態にする
         mockRepository.shouldThrowError = true
@@ -118,7 +124,8 @@ struct HomeViewModelTests {
         // Given
         let mockRepository = MockProjectRepository()
         let useCase = FetchDashboardUseCase(repository: mockRepository)
-        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When
         await viewModel.refresh()
@@ -134,7 +141,8 @@ struct HomeViewModelTests {
         // Given
         let mockRepository = MockProjectRepository(emptyForTesting: true)
         let useCase = FetchDashboardUseCase(repository: mockRepository)
-        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When
         viewModel.startNewProject()
@@ -150,7 +158,8 @@ struct HomeViewModelTests {
         // Given
         let mockRepository = MockProjectRepository(emptyForTesting: true)
         let useCase = FetchDashboardUseCase(repository: mockRepository)
-        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
         viewModel.startNewProject()
 
         // When
@@ -165,7 +174,8 @@ struct HomeViewModelTests {
         // Given
         let mockRepository = MockProjectRepository(emptyForTesting: true)
         let useCase = FetchDashboardUseCase(repository: mockRepository)
-        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
         viewModel.newProjectInput = "テストプロジェクト"
         viewModel.startNewProject()
 
@@ -197,7 +207,8 @@ struct HomeViewModelTests {
         try await mockRepository.save(project)
 
         let useCase = FetchDashboardUseCase(repository: mockRepository)
-        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When
         await viewModel.loadDashboard()
@@ -215,7 +226,8 @@ struct HomeViewModelTests {
         try await mockRepository.save(project)
 
         let useCase = FetchDashboardUseCase(repository: mockRepository)
-        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When
         await viewModel.loadDashboard()
@@ -236,7 +248,8 @@ struct HomeViewModelTests {
         try await mockRepository.save(project2)
 
         let useCase = FetchDashboardUseCase(repository: mockRepository)
-        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = HomeViewModel(fetchDashboardUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When
         await viewModel.loadDashboard()

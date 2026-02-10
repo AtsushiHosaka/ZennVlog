@@ -40,11 +40,7 @@ final class DIContainer {
         useMock: Bool = false,
         liveDependencies: LiveDependencies? = nil
     ) {
-        #if DEBUG
-        self.useMock = ProcessInfo.processInfo.environment["USE_MOCK"] == "true" || useMock
-        #else
-        self.useMock = false
-        #endif
+        self.useMock = useMock
 
         if self.useMock {
             self.projectRepository = MockProjectRepository()

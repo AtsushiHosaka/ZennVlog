@@ -13,7 +13,8 @@ struct ProjectListViewModelTests {
         // Given
         let mockRepository = MockProjectRepository()
         let useCase = FetchProjectsUseCase(repository: mockRepository)
-        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // Then
         #expect(viewModel.projects.isEmpty)
@@ -28,7 +29,8 @@ struct ProjectListViewModelTests {
         // Given
         let mockRepository = MockProjectRepository()
         let useCase = FetchProjectsUseCase(repository: mockRepository)
-        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // Then: 初期状態ではローディングしていない
         #expect(!viewModel.isLoading)
@@ -49,7 +51,8 @@ struct ProjectListViewModelTests {
         // Given
         let mockRepository = MockProjectRepository()
         let useCase = FetchProjectsUseCase(repository: mockRepository)
-        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When
         await viewModel.loadProjects()
@@ -72,7 +75,8 @@ struct ProjectListViewModelTests {
             }
         }
         let useCase = FetchProjectsUseCase(repository: mockRepository)
-        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When
         await viewModel.loadProjects()
@@ -91,7 +95,8 @@ struct ProjectListViewModelTests {
         let mockRepository = MockProjectRepository()
         mockRepository.shouldThrowError = true
         let useCase = FetchProjectsUseCase(repository: mockRepository)
-        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When
         await viewModel.loadProjects()
@@ -108,7 +113,8 @@ struct ProjectListViewModelTests {
         let mockRepository = MockProjectRepository()
         mockRepository.shouldThrowError = true
         let useCase = FetchProjectsUseCase(repository: mockRepository)
-        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When: 最初はエラー
         await viewModel.loadProjects()
@@ -130,7 +136,8 @@ struct ProjectListViewModelTests {
         let mockRepository = MockProjectRepository()
         mockRepository.shouldThrowError = true
         let useCase = FetchProjectsUseCase(repository: mockRepository)
-        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When
         await viewModel.loadProjects()
@@ -147,7 +154,8 @@ struct ProjectListViewModelTests {
         // Given
         let mockRepository = MockProjectRepository()
         let useCase = FetchProjectsUseCase(repository: mockRepository)
-        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When: 最初のロード
         await viewModel.loadProjects()
@@ -176,7 +184,8 @@ struct ProjectListViewModelTests {
         let mockRepository = MockProjectRepository()
         mockRepository.shouldThrowError = true
         let useCase = FetchProjectsUseCase(repository: mockRepository)
-        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When: エラー状態にする
         await viewModel.loadProjects()
@@ -217,7 +226,8 @@ struct ProjectListViewModelTests {
         try? await mockRepository.save(oldProject)
 
         let useCase = FetchProjectsUseCase(repository: mockRepository)
-        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When
         await viewModel.loadProjects()
@@ -233,7 +243,8 @@ struct ProjectListViewModelTests {
         // Given
         let mockRepository = MockProjectRepository()
         let useCase = FetchProjectsUseCase(repository: mockRepository)
-        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When: 複数回連続で呼び出す
         await viewModel.loadProjects()
@@ -290,7 +301,8 @@ struct ProjectListViewModelTests {
         try? await mockRepository.save(completedProject)
 
         let useCase = FetchProjectsUseCase(repository: mockRepository)
-        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase)
+        let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: mockRepository)
+        let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase, createProjectFromTemplateUseCase: createProjectUseCase)
 
         // When
         await viewModel.loadProjects()

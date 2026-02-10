@@ -17,6 +17,7 @@ final class ChatViewModel {
     var attachedVideoURL: URL?
     var streamingText: String = ""
     var isTemplateConfirmed: Bool = false
+    var isAnalyzingVideo: Bool = false
 
     // MARK: - Computed Properties
 
@@ -59,14 +60,21 @@ final class ChatViewModel {
     func sendMessage() async {
         guard !inputText.isEmpty else { return }
 
-        let userMessage = ChatMessage(role: .user, content: inputText)
+        let messageText = inputText
+        let attachedVideoURLString = attachedVideoURL?.absoluteString
+        let attachedVideoURL = attachedVideoURL
+        let userMessage = ChatMessage(
+            role: .user,
+            content: messageText,
+            attachedVideoURL: attachedVideoURLString
+        )
         messages.append(userMessage)
         await syncMessage(userMessage)
-
-        let messageText = inputText
         inputText = ""
         isLoading = true
         quickReplies = []
+        self.attachedVideoURL = nil
+        var shouldAnalyzeAttachedVideo = false
 
         do {
             let history = messages.map { msg in
@@ -91,11 +99,18 @@ final class ChatViewModel {
             } else {
                 updateQuickReplies(from: response.text)
             }
+            shouldAnalyzeAttachedVideo = true
         } catch {
             errorMessage = error.localizedDescription
         }
 
         isLoading = false
+
+        if shouldAnalyzeAttachedVideo, let attachedVideoURL {
+            Task {
+                await analyzeAttachedVideoInBackground(attachedVideoURL)
+            }
+        }
     }
 
     func confirmTemplate() {
@@ -104,8 +119,20 @@ final class ChatViewModel {
     }
 
     func sendQuickReply(_ reply: String) async {
-        inputText = reply
-        await sendMessage()
+        switch resolveQuickReplyAction(reply) {
+        case .confirmTemplate:
+            guard selectedTemplate != nil else { return }
+            isTemplateConfirmed = true
+            quickReplies = []
+            await appendUserOperationMessage(reply)
+        case .confirmBGM:
+            guard selectedBGM != nil else { return }
+            quickReplies = []
+            await appendUserOperationMessage(reply)
+        case .sendText(let text):
+            inputText = text
+            await sendMessage()
+        }
     }
 
     func selectTemplate(_ template: TemplateDTO) {
@@ -135,6 +162,7 @@ final class ChatViewModel {
         streamingText = ""
         quickReplies = []
         isTemplateConfirmed = false
+        isAnalyzingVideo = false
     }
 
     func startConversation() async {
@@ -162,6 +190,54 @@ final class ChatViewModel {
         try? await syncChatHistoryUseCase.execute(projectId: projectId, message: message)
     }
 
+    private func appendUserOperationMessage(_ text: String) async {
+        let message = ChatMessage(role: .user, content: text)
+        messages.append(message)
+        await syncMessage(message)
+    }
+
+    private func analyzeAttachedVideoInBackground(_ url: URL) async {
+        guard !isAnalyzingVideo else { return }
+        isAnalyzingVideo = true
+        defer { isAnalyzingVideo = false }
+
+        do {
+            let result = try await analyzeVideoUseCase.execute(videoURL: url)
+            let summary = makeVideoAnalysisSummary(result)
+            let assistantMessage = ChatMessage(role: .assistant, content: summary)
+            messages.append(assistantMessage)
+            await syncMessage(assistantMessage)
+        } catch {
+            errorMessage = "動画解析に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    private func makeVideoAnalysisSummary(_ result: VideoAnalysisResult) -> String {
+        guard !result.segments.isEmpty else {
+            return "動画を解析しました。大きなシーン分割は検出できませんでした。"
+        }
+
+        let lines = result.segments.prefix(3).enumerated().map { index, segment in
+            "\(index + 1). \(Int(segment.startSeconds))s-\(Int(segment.endSeconds))s: \(segment.description)"
+        }
+
+        return """
+        動画の解析が完了しました。主なシーンは次の通りです。
+        \(lines.joined(separator: "\n"))
+        """
+    }
+
+    private func resolveQuickReplyAction(_ reply: String) -> QuickReplyAction {
+        switch reply {
+        case "このテンプレートを使う":
+            return .confirmTemplate
+        case "このBGMを使う":
+            return .confirmBGM
+        default:
+            return .sendText(reply)
+        }
+    }
+
     private func updateQuickReplies(from responseText: String) {
         let text = responseText.lowercased()
 
@@ -175,4 +251,10 @@ final class ChatViewModel {
             quickReplies = []
         }
     }
+}
+
+private enum QuickReplyAction {
+    case confirmTemplate
+    case confirmBGM
+    case sendText(String)
 }

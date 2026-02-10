@@ -88,4 +88,15 @@ struct DIContainerTests {
         #expect(!(container.geminiRepository is MockGeminiRepository))
         #expect(!(container.imagenRepository is MockImagenRepository))
     }
+
+    @Test("environment USE_MOCK does not affect container selection")
+    func environmentUseMockIsIgnored() {
+        setenv("USE_MOCK", "true", 1)
+        defer { unsetenv("USE_MOCK") }
+
+        let container = DIContainer(useMock: false)
+
+        #expect(container.useMock == false)
+        #expect(!(container.geminiRepository is MockGeminiRepository))
+    }
 }
