@@ -1,4 +1,5 @@
 import Foundation
+import FirebaseFirestore
 
 protocol FirestoreRESTDataSourceProtocol: Sendable {
     func fetchCollection(named collection: String) async throws -> [FirestoreDocument]
@@ -9,87 +10,122 @@ actor FirestoreRESTDataSource: FirestoreRESTDataSourceProtocol {
 
     // MARK: - Properties
 
-    private let config: GoogleServiceConfig
-    private let httpClient: any HTTPClientProtocol
-    private let decoder = JSONDecoder()
+    private let firestore: Firestore
 
     // MARK: - Init
 
-    init(
-        config: GoogleServiceConfig,
-        httpClient: any HTTPClientProtocol = HTTPClient()
-    ) {
-        self.config = config
-        self.httpClient = httpClient
+    init(firestore: Firestore = Firestore.firestore()) {
+        self.firestore = firestore
     }
 
     // MARK: - FirestoreRESTDataSourceProtocol
 
     func fetchCollection(named collection: String) async throws -> [FirestoreDocument] {
-        let url = try makeCollectionURL(collection: collection)
-        let response = try await httpClient.get(url: url, headers: [:])
-        let payload = try decoder.decode(FirestoreCollectionResponse.self, from: response.data)
-        return payload.documents ?? []
+        let snapshot = try await getDocuments(for: firestore.collection(collection))
+        return try snapshot.documents.map { document in
+            try convert(document: document)
+        }
     }
 
     func fetchDocument(collection: String, id: String) async throws -> FirestoreDocument? {
-        let url = try makeDocumentURL(collection: collection, id: id)
-
-        do {
-            let response = try await httpClient.get(url: url, headers: [:])
-            return try decoder.decode(FirestoreDocument.self, from: response.data)
-        } catch let error as HTTPClientError {
-            if case .unexpectedStatusCode(let statusCode, _) = error, statusCode == 404 {
-                return nil
-            }
-            throw error
+        let reference = firestore.collection(collection).document(id)
+        let snapshot = try await getDocument(for: reference)
+        guard snapshot.exists else {
+            return nil
         }
+        return try convert(document: snapshot)
     }
 
     // MARK: - Private Methods
 
-    private func makeCollectionURL(collection: String) throws -> URL {
-        guard var components = URLComponents(
-            string: "https://firestore.googleapis.com/v1/projects/\(config.projectID)/databases/(default)/documents/\(collection)"
-        ) else {
-            throw URLError(.badURL)
+    private func getDocuments(for collection: CollectionReference) async throws -> QuerySnapshot {
+        try await withCheckedThrowingContinuation { continuation in
+            collection.getDocuments { snapshot, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let snapshot else {
+                    continuation.resume(throwing: URLError(.badServerResponse))
+                    return
+                }
+                continuation.resume(returning: snapshot)
+            }
         }
-
-        components.queryItems = [
-            URLQueryItem(name: "key", value: config.apiKey)
-        ]
-
-        guard let url = components.url else {
-            throw URLError(.badURL)
-        }
-
-        return url
     }
 
-    private func makeDocumentURL(collection: String, id: String) throws -> URL {
-        guard var components = URLComponents(
-            string: "https://firestore.googleapis.com/v1/projects/\(config.projectID)/databases/(default)/documents/\(collection)/\(id)"
-        ) else {
-            throw URLError(.badURL)
+    private func getDocument(for document: DocumentReference) async throws -> DocumentSnapshot {
+        try await withCheckedThrowingContinuation { continuation in
+            document.getDocument { snapshot, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let snapshot else {
+                    continuation.resume(throwing: URLError(.badServerResponse))
+                    return
+                }
+                continuation.resume(returning: snapshot)
+            }
+        }
+    }
+
+    private func convert(document: DocumentSnapshot) throws -> FirestoreDocument {
+        guard let data = document.data() else {
+            return FirestoreDocument(
+                name: document.reference.path,
+                fields: [:]
+            )
         }
 
-        components.queryItems = [
-            URLQueryItem(name: "key", value: config.apiKey)
-        ]
-
-        guard let url = components.url else {
-            throw URLError(.badURL)
+        return FirestoreDocument(
+            name: document.reference.path,
+            fields: try convert(map: data)
+        )
+    }
+    
+    private func convert(map: [String: Any]) throws -> [String: FirestoreValue] {
+        var result: [String: FirestoreValue] = [:]
+        for (key, value) in map {
+            result[key] = try convert(value: value)
         }
+        return result
+    }
 
-        return url
+    private func convert(value: Any) throws -> FirestoreValue {
+        if let stringValue = value as? String {
+            return .string(stringValue)
+        }
+        if let intValue = value as? Int {
+            return .integer(intValue)
+        }
+        if let int64Value = value as? Int64 {
+            return .integer(Int(int64Value))
+        }
+        if let doubleValue = value as? Double {
+            return .double(doubleValue)
+        }
+        if let boolValue = value as? Bool {
+            return .boolean(boolValue)
+        }
+        if let listValue = value as? [Any] {
+            return .array(try listValue.map(convert(value:)))
+        }
+        if let mapValue = value as? [String: Any] {
+            return .map(try convert(map: mapValue))
+        }
+        if value is NSNull {
+            return .null
+        }
+        throw NSError(
+            domain: "FirestoreRESTDataSource",
+            code: -1,
+            userInfo: [NSLocalizedDescriptionKey: "Unsupported Firestore value type: \(type(of: value))"]
+        )
     }
 }
 
-struct FirestoreCollectionResponse: Decodable, Sendable {
-    let documents: [FirestoreDocument]?
-}
-
-struct FirestoreDocument: Decodable, Sendable {
+struct FirestoreDocument: Sendable {
     let name: String
     let fields: [String: FirestoreValue]
 
@@ -98,7 +134,7 @@ struct FirestoreDocument: Decodable, Sendable {
     }
 }
 
-enum FirestoreValue: Decodable, Sendable {
+enum FirestoreValue: Sendable {
     case string(String)
     case integer(Int)
     case double(Double)
@@ -106,58 +142,6 @@ enum FirestoreValue: Decodable, Sendable {
     case array([FirestoreValue])
     case map([String: FirestoreValue])
     case null
-
-    private enum CodingKeys: String, CodingKey {
-        case stringValue
-        case integerValue
-        case doubleValue
-        case booleanValue
-        case arrayValue
-        case mapValue
-        case nullValue
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-
-        if let value = try container.decodeIfPresent(String.self, forKey: .stringValue) {
-            self = .string(value)
-            return
-        }
-
-        if let value = try container.decodeIfPresent(String.self, forKey: .integerValue),
-           let parsed = Int(value) {
-            self = .integer(parsed)
-            return
-        }
-
-        if let value = try container.decodeIfPresent(Double.self, forKey: .doubleValue) {
-            self = .double(value)
-            return
-        }
-
-        if let value = try container.decodeIfPresent(Bool.self, forKey: .booleanValue) {
-            self = .boolean(value)
-            return
-        }
-
-        if let value = try container.decodeIfPresent(FirestoreArrayValue.self, forKey: .arrayValue) {
-            self = .array(value.values ?? [])
-            return
-        }
-
-        if let value = try container.decodeIfPresent(FirestoreMapValue.self, forKey: .mapValue) {
-            self = .map(value.fields ?? [:])
-            return
-        }
-
-        if container.contains(.nullValue) {
-            self = .null
-            return
-        }
-
-        self = .null
-    }
 
     var string: String? {
         guard case .string(let value) = self else { return nil }
@@ -202,12 +186,4 @@ enum FirestoreValue: Decodable, Sendable {
         guard case .map(let values) = self else { return nil }
         return values
     }
-}
-
-struct FirestoreArrayValue: Decodable, Sendable {
-    let values: [FirestoreValue]?
-}
-
-struct FirestoreMapValue: Decodable, Sendable {
-    let fields: [String: FirestoreValue]?
 }
