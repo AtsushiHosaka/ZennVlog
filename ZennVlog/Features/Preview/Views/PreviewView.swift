@@ -104,7 +104,7 @@ struct PreviewView: View {
             } label: {
                 Image(systemName: viewModel.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 44))
-                    .foregroundColor(.blue)
+                    .foregroundColor(.accentColor)
             }
 
             // 時間表示
@@ -170,17 +170,17 @@ struct PreviewView: View {
                 HStack {
                     if viewModel.isExporting {
                         ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .progressViewStyle(CircularProgressViewStyle(tint: .black))
                     } else {
                         Image(systemName: "square.and.arrow.up.fill")
                     }
                     Text(viewModel.isExporting ? "書き出し中..." : "書き出して共有")
                 }
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundColor(.black)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
-                .background(viewModel.isExporting ? Color.gray : Color.blue)
+                .background(viewModel.isExporting ? Color.gray : Color.accentColor)
                 .cornerRadius(12)
             }
             .disabled(viewModel.isExporting)

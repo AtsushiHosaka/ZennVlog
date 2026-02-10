@@ -50,8 +50,8 @@ struct RecentProjectCard: View {
             .font(.caption2)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(statusColor.opacity(0.2))
-            .foregroundColor(statusColor)
+            .background(statusBackgroundColor.opacity(0.25))
+            .foregroundColor(statusTextColor)
             .cornerRadius(4)
     }
 
@@ -64,12 +64,21 @@ struct RecentProjectCard: View {
         }
     }
 
-    private var statusColor: Color {
+    private var statusBackgroundColor: Color {
         switch project.status {
         case .chatting: return .orange
-        case .recording: return .blue
-        case .editing: return .purple
+        case .recording: return .accentColor
+        case .editing: return .accentColor
         case .completed: return .green
+        }
+    }
+
+    private var statusTextColor: Color {
+        switch project.status {
+        case .recording, .editing:
+            return .black
+        default:
+            return statusBackgroundColor
         }
     }
 

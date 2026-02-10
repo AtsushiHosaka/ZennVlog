@@ -20,14 +20,14 @@ struct InProgressProjectCard: View {
                     .fontWeight(.medium)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.blue.opacity(0.2))
-                    .foregroundColor(.blue)
+                    .background(Color.accentColor.opacity(0.2))
+                    .foregroundColor(.black)
                     .cornerRadius(8)
             }
 
             // 進捗バー
             ProgressView(value: Double(project.completedSegments), total: Double(project.totalSegments))
-                .tint(.blue)
+                .tint(.accentColor)
 
             // 次に撮るセグメント（強調）
             VStack(alignment: .leading, spacing: 4) {
@@ -37,7 +37,7 @@ struct InProgressProjectCard: View {
 
                 HStack {
                     Image(systemName: "video.fill")
-                        .foregroundColor(.blue)
+                        .foregroundColor(.accentColor)
 
                     Text(project.nextSegmentDescription)
                         .font(.subheadline)
@@ -46,7 +46,7 @@ struct InProgressProjectCard: View {
                 }
                 .padding()
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.blue.opacity(0.1))
+                .background(Color.accentColor.opacity(0.1))
                 .cornerRadius(8)
             }
         }

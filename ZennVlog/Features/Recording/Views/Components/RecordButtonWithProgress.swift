@@ -21,7 +21,7 @@ struct RecordButtonWithProgress: View {
                 // 進捗円（青）
                 Circle()
                     .trim(from: 0, to: min(progress, 1.0))
-                    .stroke(Color.blue, lineWidth: 4)
+                    .stroke(Color.accentColor, lineWidth: 4)
                     .frame(width: 80, height: 80)
                     .rotationEffect(.degrees(-90))
                     .animation(.linear, value: progress)

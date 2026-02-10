@@ -145,17 +145,17 @@ struct ShareView: View {
                 HStack {
                     if viewModel.isSaving {
                         ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .progressViewStyle(CircularProgressViewStyle(tint: .black))
                     } else {
                         Image(systemName: "square.and.arrow.down.fill")
                     }
                     Text(viewModel.isSaving ? "保存中..." : "端末に保存")
                 }
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundColor(.black)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
-                .background(viewModel.isSaving ? Color.gray : Color.blue)
+                .background(viewModel.isSaving ? Color.gray : Color.accentColor)
                 .cornerRadius(12)
             }
             .disabled(viewModel.isSaving)

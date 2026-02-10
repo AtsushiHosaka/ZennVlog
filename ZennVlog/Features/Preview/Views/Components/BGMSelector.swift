@@ -58,7 +58,7 @@ private struct BGMTrackRow: View {
             } label: {
                 Image(systemName: isPreviewing ? "pause.circle.fill" : "play.circle.fill")
                     .font(.title2)
-                    .foregroundColor(.blue)
+                    .foregroundColor(.accentColor)
             }
             .buttonStyle(.plain)
 

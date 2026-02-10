@@ -9,7 +9,7 @@ struct ToolExecutionIndicator: View {
         HStack(spacing: 12) {
             if status.state == .executing {
                 ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .purple))
+                    .progressViewStyle(CircularProgressViewStyle(tint: .accentColor))
             } else if status.state == .completed {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundColor(.green)
@@ -35,7 +35,7 @@ struct ToolExecutionIndicator: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.purple.opacity(0.1))
+        .background(Color.accentColor.opacity(0.15))
         .cornerRadius(12)
     }
 }

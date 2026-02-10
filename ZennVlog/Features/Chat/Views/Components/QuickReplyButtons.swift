@@ -17,8 +17,8 @@ struct QuickReplyButtons: View {
                             .font(.subheadline)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(Color.blue.opacity(0.1))
-                            .foregroundColor(.blue)
+                            .background(Color.accentColor.opacity(0.2))
+                            .foregroundColor(.black)
                             .cornerRadius(16)
                     }
                 }

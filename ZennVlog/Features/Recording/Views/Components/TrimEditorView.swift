@@ -108,7 +108,7 @@ struct TrimEditorView: View {
 
                                 if isSceneInRange(scene.timestamp) {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.blue)
+                                        .foregroundColor(.accentColor)
                                         .font(.caption)
                                 }
                             }

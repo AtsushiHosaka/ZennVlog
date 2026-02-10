@@ -29,7 +29,7 @@ struct CreateNewCard: View {
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 28))
-                        .foregroundColor(inputText.isEmpty ? .gray : .blue)
+                        .foregroundColor(inputText.isEmpty ? .gray : .accentColor)
                 }
                 .disabled(inputText.isEmpty)
             }

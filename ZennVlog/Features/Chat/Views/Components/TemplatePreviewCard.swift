@@ -56,10 +56,10 @@ struct TemplatePreviewCard: View {
                 Text("このテンプレートを使う")
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundColor(.white)
+                    .foregroundColor(.black)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color.blue)
+                    .background(Color.accentColor)
                     .cornerRadius(8)
             }
         }

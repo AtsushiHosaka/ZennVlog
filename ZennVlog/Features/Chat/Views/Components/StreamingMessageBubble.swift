@@ -13,9 +13,9 @@ struct StreamingMessageBubble: View {
             // AIアイコン
             Image(systemName: "sparkles")
                 .font(.title3)
-                .foregroundColor(.purple)
+                .foregroundColor(.accentColor)
                 .frame(width: 32, height: 32)
-                .background(Circle().fill(Color.purple.opacity(0.1)))
+                .background(Circle().fill(Color.accentColor.opacity(0.2)))
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 0) {
@@ -28,7 +28,7 @@ struct StreamingMessageBubble: View {
 
                     if !isComplete {
                         Text("|")
-                            .foregroundColor(.purple)
+                            .foregroundColor(.secondary)
                             .opacity(showCursor ? 1 : 0)
                             .animation(.easeInOut(duration: 0.5).repeatForever(), value: showCursor)
                             .padding(.leading, 2)

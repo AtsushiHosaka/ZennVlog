@@ -12,7 +12,7 @@ struct VideoAttachmentButton: View {
             // 添付済み状態
             HStack(spacing: 8) {
                 Image(systemName: "video.fill")
-                    .foregroundColor(.blue)
+                    .foregroundColor(.accentColor)
 
                 Text(url.lastPathComponent)
                     .font(.caption)
@@ -30,7 +30,7 @@ struct VideoAttachmentButton: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color.blue.opacity(0.1))
+            .background(Color.accentColor.opacity(0.2))
             .cornerRadius(8)
         } else {
             // 未添付状態
@@ -39,13 +39,14 @@ struct VideoAttachmentButton: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "video.badge.plus")
+                        .foregroundColor(.accentColor)
                     Text("動画を添付")
                         .font(.subheadline)
+                        .foregroundColor(.primary)
                 }
-                .foregroundColor(.blue)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(Color.blue.opacity(0.1))
+                .background(Color.accentColor.opacity(0.2))
                 .cornerRadius(8)
             }
         }

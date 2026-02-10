@@ -12,12 +12,12 @@ struct BGMPreviewCard: View {
             // アイコン
             ZStack {
                 Circle()
-                    .fill(Color.purple.opacity(0.1))
+                    .fill(Color.accentColor.opacity(0.2))
                     .frame(width: 50, height: 50)
 
                 Image(systemName: "music.note")
                     .font(.title2)
-                    .foregroundColor(.purple)
+                    .foregroundColor(.accentColor)
             }
 
             // BGM情報
@@ -54,10 +54,10 @@ struct BGMPreviewCard: View {
                     Text("選択")
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundColor(.white)
+                        .foregroundColor(.black)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(Color.purple)
+                        .background(Color.accentColor)
                         .cornerRadius(8)
                 }
             }

@@ -16,7 +16,7 @@ struct ChatInputView: View {
             if let url = attachedVideoURL {
                 HStack(spacing: 8) {
                     Image(systemName: "video.fill")
-                        .foregroundColor(.blue)
+                        .foregroundColor(.accentColor)
 
                     Text(url.lastPathComponent)
                         .font(.caption)
@@ -34,7 +34,7 @@ struct ChatInputView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(Color.blue.opacity(0.1))
+                .background(Color.accentColor.opacity(0.2))
                 .cornerRadius(8)
                 .padding(.horizontal)
             }
@@ -47,7 +47,7 @@ struct ChatInputView: View {
                 } label: {
                     Image(systemName: "video.badge.plus")
                         .font(.title3)
-                        .foregroundColor(.blue)
+                        .foregroundColor(.accentColor)
                 }
 
                 // テキスト入力
@@ -65,7 +65,7 @@ struct ChatInputView: View {
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.title2)
-                        .foregroundColor(canSend ? .blue : .gray)
+                        .foregroundColor(canSend ? .accentColor : .gray)
                 }
                 .disabled(!canSend)
             }

@@ -13,13 +13,13 @@ struct SegmentCard: View {
             // サムネイル領域
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isRecorded ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
+                    .fill(isRecorded ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.2))
                     .frame(width: max(width, 50), height: 60)
 
                 if isRecorded {
                     // サムネイルプレースホルダー
                     Image(systemName: "video.fill")
-                        .foregroundColor(.blue)
+                        .foregroundColor(.accentColor)
                 } else {
                     // 未撮影
                     VStack(spacing: 2) {
@@ -47,13 +47,14 @@ struct SegmentCard: View {
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
+                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
             )
 
             // セグメント番号
             Text("S\(segment.order + 1)")
                 .font(.caption2)
-                .foregroundColor(isSelected ? .blue : .secondary)
+                .fontWeight(isSelected ? .semibold : .regular)
+                .foregroundColor(isSelected ? .primary : .secondary)
         }
     }
 }

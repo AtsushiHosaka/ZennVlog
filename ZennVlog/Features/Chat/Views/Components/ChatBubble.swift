@@ -30,9 +30,9 @@ struct ChatBubble: View {
                 // AIアイコン
                 Image(systemName: "sparkles")
                     .font(.title3)
-                    .foregroundColor(.purple)
+                    .foregroundColor(.accentColor)
                     .frame(width: 32, height: 32)
-                    .background(Circle().fill(Color.purple.opacity(0.1)))
+                    .background(Circle().fill(Color.accentColor.opacity(0.2)))
             }
 
             VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
@@ -40,13 +40,13 @@ struct ChatBubble: View {
                     Text(message)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(isUser ? Color.blue : Color.gray.opacity(0.15))
-                        .foregroundColor(isUser ? .white : .primary)
+                        .background(isUser ? Color.accentColor : Color.gray.opacity(0.15))
+                        .foregroundColor(isUser ? .black : .primary)
                         .cornerRadius(16)
 
                     if isStreaming {
                         Text("|")
-                            .foregroundColor(.purple)
+                            .foregroundColor(.secondary)
                             .padding(.leading, 2)
                     }
                 }

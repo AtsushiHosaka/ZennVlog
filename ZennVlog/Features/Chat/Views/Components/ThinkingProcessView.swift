@@ -12,7 +12,7 @@ struct ThinkingProcessView: View {
                     // タイムラインインジケータ
                     VStack(spacing: 0) {
                         Circle()
-                            .fill(Color.purple)
+                            .fill(Color.accentColor)
                             .frame(width: 24, height: 24)
                             .overlay {
                                 Image(systemName: step.type.iconName)
@@ -22,7 +22,7 @@ struct ThinkingProcessView: View {
 
                         if index < steps.count - 1 {
                             Rectangle()
-                                .fill(Color.purple.opacity(0.3))
+                                .fill(Color.accentColor.opacity(0.4))
                                 .frame(width: 2)
                                 .frame(minHeight: 20)
                         }
@@ -33,7 +33,7 @@ struct ThinkingProcessView: View {
                         Text(step.type.rawValue)
                             .font(.caption)
                             .fontWeight(.semibold)
-                            .foregroundColor(.purple)
+                            .foregroundColor(.primary)
 
                         Text(step.description)
                             .font(.subheadline)
@@ -46,7 +46,7 @@ struct ThinkingProcessView: View {
             }
         }
         .padding()
-        .background(Color.purple.opacity(0.05))
+        .background(Color.accentColor.opacity(0.1))
         .cornerRadius(12)
     }
 }
