@@ -12,18 +12,6 @@ actor FirestoreTemplateRepository: TemplateRepositoryProtocol {
         self.dataSource = dataSource
     }
 
-    convenience init(
-        config: GoogleServiceConfig = GoogleServiceConfigLoader.load(),
-        httpClient: any HTTPClientProtocol = HTTPClient()
-    ) {
-        self.init(
-            dataSource: FirestoreRESTDataSource(
-                config: config,
-                httpClient: httpClient
-            )
-        )
-    }
-
     // MARK: - TemplateRepositoryProtocol
 
     func fetchAll() async throws -> [TemplateDTO] {

@@ -63,16 +63,9 @@ final class DIContainer {
             self.photoLibraryService = liveDependencies.photoLibraryService
             self.activityControllerService = liveDependencies.activityControllerService
         } else {
-            let googleServiceConfig = GoogleServiceConfigLoader.load()
             let httpClient = HTTPClient()
-            let firestoreDataSource = FirestoreRESTDataSource(
-                config: googleServiceConfig,
-                httpClient: httpClient
-            )
-            let storageDataSource = StorageRESTDataSource(
-                config: googleServiceConfig,
-                httpClient: httpClient
-            )
+            let firestoreDataSource = FirestoreRESTDataSource()
+            let storageDataSource = StorageRESTDataSource()
             let geminiDataSource = GeminiRESTDataSource(
                 apiKey: SecretsManager.geminiAPIKey,
                 httpClient: httpClient

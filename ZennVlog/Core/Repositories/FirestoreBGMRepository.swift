@@ -20,18 +20,6 @@ actor FirestoreBGMRepository: BGMRepositoryProtocol {
         self.fileManager = fileManager
     }
 
-    convenience init(
-        config: GoogleServiceConfig = GoogleServiceConfigLoader.load(),
-        httpClient: any HTTPClientProtocol = HTTPClient(),
-        fileManager: FileManager = .default
-    ) {
-        self.init(
-            dataSource: FirestoreRESTDataSource(config: config, httpClient: httpClient),
-            storageDataSource: StorageRESTDataSource(config: config, httpClient: httpClient),
-            fileManager: fileManager
-        )
-    }
-
     // MARK: - BGMRepositoryProtocol
 
     func fetchAll() async throws -> [BGMTrack] {
