@@ -16,10 +16,24 @@ enum SecretsManager {
         return key
     }
 
-    static var imagenAPIKey: String {
-        guard let key = secrets["IMAGEN_API_KEY"] as? String, !key.isEmpty else {
-            fatalError("IMAGEN_API_KEY not configured in Secrets.plist")
+    static var geminiTextModel: String {
+        guard let model = secrets["GEMINI_TEXT_MODEL"] as? String, !model.isEmpty else {
+            fatalError("GEMINI_TEXT_MODEL not configured in Secrets.plist")
         }
-        return key
+        return model
+    }
+
+    static var geminiVideoModel: String {
+        guard let model = secrets["GEMINI_VIDEO_MODEL"] as? String, !model.isEmpty else {
+            fatalError("GEMINI_VIDEO_MODEL not configured in Secrets.plist")
+        }
+        return model
+    }
+
+    static var geminiImageModel: String {
+        guard let model = secrets["GEMINI_IMAGE_MODEL"] as? String, !model.isEmpty else {
+            fatalError("GEMINI_IMAGE_MODEL not configured in Secrets.plist")
+        }
+        return model
     }
 }

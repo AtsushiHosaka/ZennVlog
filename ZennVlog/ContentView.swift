@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+@MainActor
 struct ContentView: View {
     @AppStorage("hasShownInitialChat") private var hasShownInitialChat = false
     @State private var selectedTab: RootTab = .home

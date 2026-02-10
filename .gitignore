@@ -16,6 +16,7 @@ Pods/
 
 # Secrets
 ZennVlog/Secrets.plist
+ZennVlog/GoogleService-Info.plist
 
 # macOS
 **/.DS_Store
