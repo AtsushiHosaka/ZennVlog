@@ -38,15 +38,6 @@ struct HomeView: View {
                         RecentProjectCard(project: project)
                     }
                     .padding(.horizontal)
-
-                    DashboardSection(
-                        title: "完成したVlog",
-                        items: viewModel.completedProjects,
-                        emptyMessage: "完成したVlogはありません"
-                    ) { project in
-                        CompletedVlogCard(project: project)
-                    }
-                    .padding(.horizontal)
                 }
                 .padding(.vertical)
             }
