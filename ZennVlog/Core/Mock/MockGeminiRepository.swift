@@ -20,7 +20,63 @@ actor MockGeminiRepository: GeminiRepositoryProtocol {
         )
     }
 
+    func sendTurn(
+        systemInstruction: String,
+        contents: [[String: Any]],
+        tools: [[String: Any]]
+    ) async throws -> GeminiTurnResponse {
+        try await simulateNetworkDelay()
+        // Mock always returns text (no function call), so the FC loop ends in 1 turn
+        let lastUserContent = contents.last { ($0["role"] as? String) == "user" }
+        let lastMessage = (lastUserContent?["parts"] as? [[String: Any]])?
+            .first?["text"] as? String ?? ""
+        let history = extractHistoryFromContents(contents)
+        let response = generateMockResponse(for: lastMessage, history: history)
+        return .text(encodeResponseAsJSON(response))
+    }
+
     // MARK: - Private Methods
+
+    private func extractHistoryFromContents(_ contents: [[String: Any]]) -> [ChatMessageDTO] {
+        contents.compactMap { content in
+            guard let role = content["role"] as? String,
+                  let parts = content["parts"] as? [[String: Any]],
+                  let text = parts.first?["text"] as? String else { return nil }
+            return ChatMessageDTO(
+                role: role == "user" ? .user : .assistant,
+                content: text,
+                attachedVideoURL: nil
+            )
+        }
+    }
+
+    private func encodeResponseAsJSON(_ response: GeminiChatResponse) -> String {
+        var json: [String: Any] = ["text": response.text]
+
+        if let template = response.suggestedTemplates.first {
+            json["suggestedTemplate"] = [
+                "id": template.id,
+                "name": template.name,
+                "description": template.description,
+                "referenceVideoUrl": template.referenceVideoUrl,
+                "explanation": template.explanation,
+                "segments": template.segments.map { segment in
+                    [
+                        "order": segment.order,
+                        "startSec": segment.startSec,
+                        "endSec": segment.endSec,
+                        "description": segment.description
+                    ] as [String: Any]
+                }
+            ]
+        }
+
+        guard let data = try? JSONSerialization.data(withJSONObject: json),
+              let str = String(data: data, encoding: .utf8) else {
+            return "{\"text\": \"エラーが発生しました\"}"
+        }
+        return str
+    }
 
     private func simulateNetworkDelay() async throws {
         try await Task.sleep(nanoseconds: 800_000_000)
@@ -72,8 +128,8 @@ actor MockGeminiRepository: GeminiRepositoryProtocol {
         if history.isEmpty {
             return GeminiChatResponse(
                 text: "こんにちは！Vlog作成をお手伝いします。\n\nまず、どんなテーマのVlogを作りたいですか？\n例：日常、旅行、グルメ、趣味など",
-                suggestedTemplate: nil,
-                suggestedBGM: nil
+                suggestedTemplates: [],
+
             )
         }
 
@@ -81,8 +137,8 @@ actor MockGeminiRepository: GeminiRepositoryProtocol {
         if stateIndex == 1 {
             return GeminiChatResponse(
                 text: "素敵ですね！\n\n構成は決まっていますか？決まっていなければ、いくつかテンプレートを提案できます。",
-                suggestedTemplate: nil,
-                suggestedBGM: nil
+                suggestedTemplates: [],
+
             )
         }
 
@@ -104,42 +160,21 @@ actor MockGeminiRepository: GeminiRepositoryProtocol {
             )
             return GeminiChatResponse(
                 text: "こちらのテンプレートはいかがでしょうか？\n\n【1日のVlog】\n朝→昼→夜の流れで、日常の何気ない瞬間を切り取ります。\n\nこの構成でよろしいですか？",
-                suggestedTemplate: template,
-                suggestedBGM: nil
+                suggestedTemplates: [template]
             )
         }
 
-        // テンプレート承認 → BGM提案
+        // テンプレート承認 → 撮影開始
         if stateIndex == 3 && (lowerMessage.contains("はい") || lowerMessage.contains("いい") || lowerMessage.contains("ok") || lowerMessage.contains("お願い")) {
-            let bgm = BGMTrack(
-                id: "bgm-001",
-                title: "爽やかな朝",
-                description: "明るく前向きなVlogに最適",
-                genre: "pop",
-                duration: 120,
-                storageUrl: "gs://bucket/bgm/morning.m4a",
-                tags: ["明るい", "爽やか", "日常"]
-            )
-            return GeminiChatResponse(
-                text: "テンプレートが決まりました！\n\nBGMは「爽やかな朝」がおすすめです。明るく前向きな雰囲気にぴったりですよ。\n\nこのBGMでよろしいですか？",
-                suggestedTemplate: nil,
-                suggestedBGM: bgm
-            )
-        }
-
-        // BGM承認 → 撮影開始
-        if stateIndex == 4 && (lowerMessage.contains("はい") || lowerMessage.contains("いい") || lowerMessage.contains("ok") || lowerMessage.contains("お願い")) {
             return GeminiChatResponse(
                 text: "準備が整いました！\n\n撮影を始めましょう。各セグメントの説明に沿って動画を撮影してください。",
-                suggestedTemplate: nil,
-                suggestedBGM: nil
+                suggestedTemplates: []
             )
         }
 
         return GeminiChatResponse(
             text: "承知しました。他にご質問があればお聞きください。",
-            suggestedTemplate: nil,
-            suggestedBGM: nil
+            suggestedTemplates: []
         )
     }
 }

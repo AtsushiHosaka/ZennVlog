@@ -4,7 +4,7 @@
 AIとの会話でVlogのテンプレート・コンセプトを決定する画面。フルスクリーンモーダルで表示。
 会話するAIはエージェンティックにユーザーから必要な情報を引き出し、テンプレートを作成する。
 
-**技術スタック**: iOS 26のFoundation Models Framework（オンデバイスLLM ~3Bパラメータ）を使用し、プライバシー保護・オフライン対応・コスト削減を実現。オンデバイスモデル利用不可時はGemini APIへ自動フォールバック。
+**技術スタック**: Gemini APIを使用。Function Callingにより、テンプレート検索・BGM選択は実際のリポジトリからデータを取得して応答する。
 
 ## 状態（ViewModel）
 
@@ -30,7 +30,6 @@ AIとの会話でVlogのテンプレート・コンセプトを決定する画�
 | thinkingSteps | [ThinkingStep] | 思考プロセスステップ（推論、分析、計画、結論） |
 | showTemplatePreview | Bool | テンプレートプレビュー表示フラグ |
 | previewTemplates | [TemplateDTO] | プレビュー対象テンプレート一覧 |
-| isOffline | Bool | オフライン状態フラグ（ネットワーク監視） |
 
 ## ユーザーアクション
 
@@ -46,11 +45,11 @@ AIとの会話でVlogのテンプレート・コンセプトを決定する画�
 
 ## UseCase
 
-- `InitializeChatSessionUseCase` - LanguageModelSessionの初期化または復元
-- `SendMessageWithAIUseCase` - Foundation Modelsへメッセージ送信、ストリーミング応答取得、ツール呼び出しオーケストレーション
-- `SyncChatHistoryUseCase` - SwiftDataのChatMessageとLanguageModelSessionの同期
-- `AnalyzeVideoUseCase` - 添付動画をGeminiで解析、セグメントに自動割当（VideoAnalysisToolから呼び出される）
-- `FetchTemplatesUseCase` - Firestoreからテンプレート一覧を取得（TemplateSearchToolから呼び出される）
+- `InitializeChatSessionUseCase` - チャットセッションの初期化または復元
+- `SendMessageWithAIUseCase` - Gemini APIへメッセージ送信、Function Callingループによるツール実行オーケストレーション
+- `SyncChatHistoryUseCase` - SwiftDataのChatMessageの同期
+- `AnalyzeVideoUseCase` - 添付動画をGeminiで解析、セグメントに自動割当（videoAnalysisツールから呼び出される）
+- `FetchTemplatesUseCase` - Firestoreからテンプレート一覧を取得（templateSearchツールから呼び出される）
 
 ## コンポーネント
 
@@ -75,56 +74,39 @@ AIとの会話でVlogのテンプレート・コンセプトを決定する画�
 - 動画添付時、Geminiで解析してテンプレートのセグメントに自動マッピング
 - テンプレート確定時にBGMも選択させる
 - チャット履歴はProjectに保存される（SwiftData）
-- **iOS 26 / A17 Pro以降のiPhone必須**: Foundation Models Framework使用のため
-- **地域制限あり**: Foundation Modelsのロールアウト状況により利用可否が異なる
-- **オフライン対応**: 会話継続可能（動画分析を除く）
 
 ---
 
-## Foundation Models統合設計
+## Gemini Function Calling 統合設計
 
-### オンデバイスAI実装
+### データフロー
 
-#### LanguageModelSession
-- iOS 26のFoundation Models Framework使用
-- ~3Bパラメータのオンデバイス言語モデル
-- Apple Silicon（CPU/GPU/Neural Engine）で高速実行
-- プライバシー保護：データは端末外に送信されない
-- オフライン対応：ネットワーク不要で動作
+User Input → ChatViewModel.sendMessage() → SendMessageWithAIUseCase (Function Calling Loop) → GeminiRepository → GeminiRESTDataSource → Gemini API応答（text or functionCall） → ツール実行（テンプレート検索/動画分析/BGM選択） → 結果をcontentsに追加 → 再度Gemini API呼び出し → 最終テキスト応答 → JSONパースして GeminiChatResponse → ViewModel更新 → SwiftUI描画 → SwiftData保存
 
-#### システムプロンプト設計
-Vlogエキスパートアシスタントとしての役割定義：
-- ユーザーからテーマ・内容を引き出す
-- テンプレート検索（templateSearchツール）、動画分析（videoAnalysisツール）、BGM選択（bgmSelectionツール）を適切に使用
-- フレンドリーでプロアクティブな対話スタイル
-- 「はい/いいえ」で答えやすい質問形式
-- 会話フロー: テーマ確認 → テンプレート検索 → フィードバック → BGM選択 → 撮影開始
+### Function Calling ループ
 
-#### Session永続化
-各ProjectごとにLanguageModelSessionを保持し、アプリ再起動後も会話履歴を維持
+1. history + 新メッセージから contents を構築
+2. `repository.sendTurn()` を tool declarations 付きで呼び出し
+3. `.functionCall` なら → ツール実行 → 結果をcontentsに追加 → 再度呼び出し
+4. `.text` なら → JSONパースして `GeminiChatResponse` を返す
+5. 最大5回のイテレーションガード
 
-### Tools定義（Foundation Models Tool Protocol）
+### Tools定義（Gemini Function Calling 形式）
 
-#### 1. TemplateSearchTool（最優先）
-ユーザーの希望に合うVlogテンプレートを検索。MockTemplateRepositoryから取得し、クエリとカテゴリでフィルタリング。
+#### 1. templateSearch
+ユーザーの希望に合うVlogテンプレートを検索。TemplateRepositoryから取得し、クエリとカテゴリでフィルタリング。
 
-**パラメータ**: query（String）、category（String?）
+**パラメータ**: query（String）、category（String, optional）
 
-#### 2. VideoAnalysisTool
-添付動画を解析し、セグメントに自動マッピング。MockGeminiRepository.analyzeVideo()を呼び出し（Gemini APIでしか実装できない）。
+#### 2. videoAnalysis
+添付動画を解析し、セグメントに自動マッピング。GeminiRepository.analyzeVideo()を呼び出し。
 
 **パラメータ**: videoURL（String）
 
-#### 3. BGMSelectionTool
-テンプレートに合うBGMを提案。MockBGMRepositoryから取得し、テンプレート名とmoodでフィルタ、上位3件を推薦。
+#### 3. bgmSelection
+テンプレートに合うBGMを提案。BGMRepositoryから取得し、テンプレート名とmoodでフィルタ、上位3件を推薦。
 
-**パラメータ**: templateId（String）、mood（String?）
-
-### ハイブリッド実行戦略
-
-- **オンデバイス**: 会話、テンプレート検索、BGM選択
-- **Gemini API**: 動画分析（VideoAnalysisToolの実装内部で使用）
-- **フォールバック**: LanguageModelError.notAvailable検知時、会話全体をGeminiRepositoryで代替
+**パラメータ**: templateId（String）、mood（String, optional）
 
 ---
 
@@ -137,10 +119,6 @@ AIの思考プロセスを段階的に表示。ThinkingStepType: reasoning（推
 ### プロアクティブな質問生成
 
 システムプロンプトで指示し、AIが自律的に質問を生成。会話フェーズ（初期→詳細化→提案→確認→BGM選択）に応じて適切な質問をする。
-
-### 記憶と文脈理解
-
-LanguageModelSessionの永続化により会話履歴を維持。Foundation Modelsが内部的に履歴管理、SwiftDataのChatMessageは表示・記録用。SyncChatHistoryUseCaseで同期。
 
 ---
 
@@ -164,28 +142,10 @@ TemplatePreviewCard: 参考動画サムネイル（16:9）、テンプレート�
 
 ---
 
-## データフロー
-
-User Input → ChatViewModel.sendMessage() → SendMessageWithAIUseCase → FoundationModelRepository → LanguageModelSession → AsyncThrowingStream（.text / .toolCall / .thinkingStep / .complete） → ViewModel更新 → SwiftUI描画 → SwiftData保存
-
-Tool実行: LanguageModelSessionがツール呼び出し判断 → Tool実行（TemplateSearch / VideoAnalysis / BGMSelection） → 結果をSessionにフィードバック → AIが結果を踏まえて応答生成
-
----
-
 ## エラーハンドリング
 
-**ChatError**: sessionNotInitialized、foundationModelsUnavailable、toolExecutionFailed、streamingInterrupted、invalidToolParameters、networkUnavailable
+**ChatError**: toolExecutionFailed、streamingInterrupted、invalidToolParameters、networkUnavailable
 
 **主要ケース**:
-- LanguageModelError.notAvailable: GeminiRepositoryへ自動フォールバック、エラーメッセージ表示
-- ネットワーク不可: NWPathMonitorで監視、オンデバイスのみ動作（動画分析は不可）
+- ネットワーク不可: Gemini APIはネットワーク必須のためエラーメッセージ表示
 - ツール実行失敗: エラーメッセージ表示、会話継続
-
----
-
-## 技術制約と要件
-
-- **iOS 26 / A17 Pro以降のiPhone必須**
-- **地域制限あり**（Foundation Modelsのロールアウト状況による）
-- **モデルサイズ**: ~3Bパラメータ（複雑な推論には限界あり）
-- **コンテキストウィンドウ**: 長い会話は要約が必要な場合あり
