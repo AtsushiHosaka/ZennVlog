@@ -95,9 +95,14 @@ struct ProjectListView: View {
         .padding()
     }
 
+    private let columns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
+    ]
+
     private var projectList: some View {
         ScrollView {
-            LazyVStack(spacing: 12) {
+            LazyVGrid(columns: columns, spacing: 12) {
                 ForEach(viewModel.projects, id: \.id) { project in
                     NavigationLink {
                         let container = DIContainer.shared
