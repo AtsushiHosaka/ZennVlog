@@ -64,14 +64,13 @@ final class HomeViewModel {
     }
 
     func handleTemplateConfirmed(
-        template: TemplateDTO,
-        bgm: BGMTrack?
+        template: TemplateDTO
     ) async {
         do {
             let project = try await createProjectFromTemplateUseCase.execute(
                 preferredName: newProjectInput,
                 templateDTO: template,
-                bgm: bgm
+                bgm: nil
             )
             dismissChat()
             await loadDashboard()

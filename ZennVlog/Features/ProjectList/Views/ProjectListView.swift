@@ -25,15 +25,18 @@ struct ProjectListView: View {
             .fullScreenCover(isPresented: $showChat) {
                 let container = DIContainer.shared
                 let chatViewModel = ChatViewModel(
-                    sendMessageUseCase: SendMessageWithAIUseCase(repository: container.geminiRepository),
+                    sendMessageUseCase: SendMessageWithAIUseCase(
+                        repository: container.geminiRepository,
+                        templateRepository: container.templateRepository
+                    ),
                     fetchTemplatesUseCase: FetchTemplatesUseCase(repository: container.templateRepository),
                     analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
                     syncChatHistoryUseCase: SyncChatHistoryUseCase(),
                     initializeChatSessionUseCase: InitializeChatSessionUseCase()
                 )
-                ChatView(viewModel: chatViewModel) { template, bgm in
+                ChatView(viewModel: chatViewModel) { template in
                     Task {
-                        await viewModel.handleTemplateConfirmed(template: template, bgm: bgm)
+                        await viewModel.handleTemplateConfirmed(template: template)
                         showChat = false
                     }
                 }

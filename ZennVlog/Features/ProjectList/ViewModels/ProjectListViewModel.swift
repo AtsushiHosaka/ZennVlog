@@ -47,14 +47,13 @@ final class ProjectListViewModel {
     }
 
     func handleTemplateConfirmed(
-        template: TemplateDTO,
-        bgm: BGMTrack?
+        template: TemplateDTO
     ) async {
         do {
             let project = try await createProjectFromTemplateUseCase.execute(
                 preferredName: nil,
                 templateDTO: template,
-                bgm: bgm
+                bgm: nil
             )
             await loadProjects()
             projectForRecording = project

@@ -12,12 +12,13 @@ final class ChatViewModel {
     var isLoading: Bool = false
     var errorMessage: String?
     var quickReplies: [String] = []
+    var suggestedTemplates: [TemplateDTO] = []
     var selectedTemplate: TemplateDTO?
-    var selectedBGM: BGMTrack?
     var attachedVideoURL: URL?
     var streamingText: String = ""
     var isTemplateConfirmed: Bool = false
     var isAnalyzingVideo: Bool = false
+    var toolExecutionStatus: ToolExecutionStatus?
 
     // MARK: - Computed Properties
 
@@ -39,13 +40,16 @@ final class ChatViewModel {
 
     // MARK: - Init
 
+    private let initialMessage: String
+
     init(
         sendMessageUseCase: SendMessageWithAIUseCase,
         fetchTemplatesUseCase: FetchTemplatesUseCase,
         analyzeVideoUseCase: AnalyzeVideoUseCase,
         syncChatHistoryUseCase: SyncChatHistoryUseCase,
         initializeChatSessionUseCase: InitializeChatSessionUseCase,
-        projectId: UUID? = nil
+        projectId: UUID? = nil,
+        initialMessage: String = ""
     ) {
         self.sendMessageUseCase = sendMessageUseCase
         self.fetchTemplatesUseCase = fetchTemplatesUseCase
@@ -53,6 +57,7 @@ final class ChatViewModel {
         self.syncChatHistoryUseCase = syncChatHistoryUseCase
         self.initializeChatSessionUseCase = initializeChatSessionUseCase
         self.projectId = projectId
+        self.initialMessage = initialMessage
     }
 
     // MARK: - Public Methods
@@ -68,6 +73,15 @@ final class ChatViewModel {
             content: messageText,
             attachedVideoURL: attachedVideoURLString
         )
+        // Build history BEFORE appending user message to avoid duplication in contents
+        let history = messages.map { msg in
+            ChatMessageDTO(
+                role: msg.role == .user ? .user : .assistant,
+                content: msg.content,
+                attachedVideoURL: msg.attachedVideoURL
+            )
+        }
+
         messages.append(userMessage)
         await syncMessage(userMessage)
         inputText = ""
@@ -77,25 +91,28 @@ final class ChatViewModel {
         var shouldAnalyzeAttachedVideo = false
 
         do {
-            let history = messages.map { msg in
-                ChatMessageDTO(
-                    role: msg.role == .user ? .user : .assistant,
-                    content: msg.content,
-                    attachedVideoURL: msg.attachedVideoURL
-                )
-            }
-            let response = try await sendMessageUseCase.execute(message: messageText, history: history)
+            let response = try await sendMessageUseCase.execute(
+                message: messageText,
+                history: history,
+                onToolExecution: { [weak self] status in
+                    guard let self else { return }
+                    self.toolExecutionStatus = status
+                    if status.state == .executing {
+                        let hint = self.toolHintMessage(for: status.toolName)
+                        let hintMessage = ChatMessage(role: .assistant, content: hint)
+                        self.messages.append(hintMessage)
+                    }
+                }
+            )
 
             let assistantMessage = ChatMessage(role: .assistant, content: response.text)
             messages.append(assistantMessage)
             await syncMessage(assistantMessage)
 
-            if let template = response.suggestedTemplate {
-                selectedTemplate = template
-                quickReplies = ["このテンプレートを使う", "他のテンプレートを見る"]
-            } else if let bgm = response.suggestedBGM {
-                selectedBGM = bgm
-                quickReplies = ["このBGMを使う", "他のBGMを見る"]
+            if !response.suggestedTemplates.isEmpty {
+                suggestedTemplates = response.suggestedTemplates
+                selectedTemplate = nil
+                quickReplies = []
             } else {
                 updateQuickReplies(from: response.text)
             }
@@ -105,6 +122,7 @@ final class ChatViewModel {
         }
 
         isLoading = false
+        toolExecutionStatus = nil
 
         if shouldAnalyzeAttachedVideo, let attachedVideoURL {
             Task {
@@ -119,28 +137,20 @@ final class ChatViewModel {
     }
 
     func sendQuickReply(_ reply: String) async {
-        switch resolveQuickReplyAction(reply) {
-        case .confirmTemplate:
+        switch reply {
+        case "このテンプレートを使う":
             guard selectedTemplate != nil else { return }
             isTemplateConfirmed = true
             quickReplies = []
             await appendUserOperationMessage(reply)
-        case .confirmBGM:
-            guard selectedBGM != nil else { return }
-            quickReplies = []
-            await appendUserOperationMessage(reply)
-        case .sendText(let text):
-            inputText = text
+        default:
+            inputText = reply
             await sendMessage()
         }
     }
 
     func selectTemplate(_ template: TemplateDTO) {
         selectedTemplate = template
-    }
-
-    func selectBGM(_ bgm: BGMTrack) {
-        selectedBGM = bgm
     }
 
     func attachVideo(_ url: URL) {
@@ -161,26 +171,17 @@ final class ChatViewModel {
         attachedVideoURL = nil
         streamingText = ""
         quickReplies = []
+        suggestedTemplates = []
         isTemplateConfirmed = false
         isAnalyzingVideo = false
+        toolExecutionStatus = nil
     }
 
     func startConversation() async {
-        guard messages.isEmpty else { return }
+        guard messages.isEmpty, !initialMessage.isEmpty else { return }
 
-        isLoading = true
-
-        do {
-            let response = try await sendMessageUseCase.execute(message: "こんにちは", history: [])
-            let assistantMessage = ChatMessage(role: .assistant, content: response.text)
-            messages.append(assistantMessage)
-            await syncMessage(assistantMessage)
-            updateQuickReplies(from: response.text)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-
-        isLoading = false
+        inputText = initialMessage
+        await sendMessage()
     }
 
     // MARK: - Private Methods
@@ -227,14 +228,14 @@ final class ChatViewModel {
         """
     }
 
-    private func resolveQuickReplyAction(_ reply: String) -> QuickReplyAction {
-        switch reply {
-        case "このテンプレートを使う":
-            return .confirmTemplate
-        case "このBGMを使う":
-            return .confirmBGM
+    private func toolHintMessage(for toolName: String) -> String {
+        switch toolName {
+        case "templateSearch":
+            return "ぴったりのテンプレートを探してみますね！"
+        case "videoAnalysis":
+            return "動画を分析してみますね！"
         default:
-            return .sendText(reply)
+            return "少々お待ちください..."
         }
     }
 
@@ -251,10 +252,4 @@ final class ChatViewModel {
             quickReplies = []
         }
     }
-}
-
-private enum QuickReplyAction {
-    case confirmTemplate
-    case confirmBGM
-    case sendText(String)
 }
