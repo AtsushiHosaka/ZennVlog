@@ -8,11 +8,11 @@ struct ChatView: View {
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var scrollProxy: ScrollViewProxy?
 
-    let onTemplateConfirmed: (TemplateDTO, BGMTrack?) -> Void
+    let onTemplateConfirmed: (TemplateDTO) -> Void
 
     init(
         viewModel: ChatViewModel,
-        onTemplateConfirmed: @escaping (TemplateDTO, BGMTrack?) -> Void
+        onTemplateConfirmed: @escaping (TemplateDTO) -> Void
     ) {
         _viewModel = State(wrappedValue: viewModel)
         self.onTemplateConfirmed = onTemplateConfirmed
@@ -117,19 +117,33 @@ struct ChatView: View {
                         )
                     }
 
+                    // Tool execution indicator
+                    if let toolStatus = viewModel.toolExecutionStatus {
+                        ToolExecutionIndicator(status: toolStatus)
+                            .padding(.horizontal)
+                    }
+
                     // Loading indicator
                     if viewModel.isLoading && viewModel.streamingText.isEmpty {
                         loadingIndicator
                     }
 
-                    // Template Preview
-                    if let template = viewModel.selectedTemplate {
-                        templatePreview(template)
+                    if viewModel.isAnalyzingVideo {
+                        videoAnalysisIndicator
                     }
 
-                    // BGM Preview
-                    if let bgm = viewModel.selectedBGM {
-                        bgmPreview(bgm)
+                    // Template Previews
+                    if !viewModel.suggestedTemplates.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(alignment: .top, spacing: 12) {
+                                ForEach(viewModel.suggestedTemplates, id: \.id) { template in
+                                    templatePreview(template)
+                                        .frame(width: 280)
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                        .frame(height: 340)
                     }
 
                     Spacer()
@@ -173,35 +187,22 @@ struct ChatView: View {
     }
 
     @ViewBuilder
-    private func templatePreview(_ template: TemplateDTO) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("提案されたテンプレート")
+    private var videoAnalysisIndicator: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+            Text("添付動画を解析中...")
                 .font(.caption)
                 .foregroundColor(.secondary)
-                .padding(.horizontal)
-
-            TemplatePreviewCard(template: template) {
-                viewModel.selectTemplate(template)
-            }
-            .padding(.horizontal)
+            Spacer()
         }
+        .padding(.horizontal)
+        .padding(.leading, 40)
     }
 
     @ViewBuilder
-    private func bgmPreview(_ bgm: BGMTrack) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("提案されたBGM")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.horizontal)
-
-            BGMPreviewCard(
-                bgm: bgm,
-                isSelected: viewModel.selectedBGM?.id == bgm.id
-            ) {
-                viewModel.selectBGM(bgm)
-            }
-            .padding(.horizontal)
+    private func templatePreview(_ template: TemplateDTO) -> some View {
+        TemplatePreviewCard(template: template) {
+            viewModel.selectTemplate(template)
         }
     }
 
@@ -213,7 +214,7 @@ struct ChatView: View {
 
     private func confirmTemplate() {
         guard let template = viewModel.selectedTemplate else { return }
-        onTemplateConfirmed(template, viewModel.selectedBGM)
+        onTemplateConfirmed(template)
         dismiss()
     }
 
@@ -235,11 +236,14 @@ struct ChatView: View {
 #Preview {
     let container = DIContainer.preview
     let viewModel = ChatViewModel(
-        sendMessageUseCase: SendMessageWithAIUseCase(repository: container.geminiRepository),
+        sendMessageUseCase: SendMessageWithAIUseCase(
+            repository: container.geminiRepository,
+            templateRepository: container.templateRepository
+        ),
         fetchTemplatesUseCase: FetchTemplatesUseCase(repository: container.templateRepository),
         analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
         syncChatHistoryUseCase: SyncChatHistoryUseCase(),
         initializeChatSessionUseCase: InitializeChatSessionUseCase()
     )
-    return ChatView(viewModel: viewModel) { _, _ in }
+    ChatView(viewModel: viewModel) { _ in }
 }

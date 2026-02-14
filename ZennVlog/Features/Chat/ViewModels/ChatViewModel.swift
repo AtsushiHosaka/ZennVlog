@@ -12,11 +12,13 @@ final class ChatViewModel {
     var isLoading: Bool = false
     var errorMessage: String?
     var quickReplies: [String] = []
+    var suggestedTemplates: [TemplateDTO] = []
     var selectedTemplate: TemplateDTO?
-    var selectedBGM: BGMTrack?
     var attachedVideoURL: URL?
     var streamingText: String = ""
     var isTemplateConfirmed: Bool = false
+    var isAnalyzingVideo: Bool = false
+    var toolExecutionStatus: ToolExecutionStatus?
 
     // MARK: - Computed Properties
 
@@ -38,13 +40,16 @@ final class ChatViewModel {
 
     // MARK: - Init
 
+    private let initialMessage: String
+
     init(
         sendMessageUseCase: SendMessageWithAIUseCase,
         fetchTemplatesUseCase: FetchTemplatesUseCase,
         analyzeVideoUseCase: AnalyzeVideoUseCase,
         syncChatHistoryUseCase: SyncChatHistoryUseCase,
         initializeChatSessionUseCase: InitializeChatSessionUseCase,
-        projectId: UUID? = nil
+        projectId: UUID? = nil,
+        initialMessage: String = ""
     ) {
         self.sendMessageUseCase = sendMessageUseCase
         self.fetchTemplatesUseCase = fetchTemplatesUseCase
@@ -52,6 +57,7 @@ final class ChatViewModel {
         self.syncChatHistoryUseCase = syncChatHistoryUseCase
         self.initializeChatSessionUseCase = initializeChatSessionUseCase
         self.projectId = projectId
+        self.initialMessage = initialMessage
     }
 
     // MARK: - Public Methods
@@ -59,43 +65,70 @@ final class ChatViewModel {
     func sendMessage() async {
         guard !inputText.isEmpty else { return }
 
-        let userMessage = ChatMessage(role: .user, content: inputText)
+        let messageText = inputText
+        let attachedVideoURLString = attachedVideoURL?.absoluteString
+        let attachedVideoURL = attachedVideoURL
+        let userMessage = ChatMessage(
+            role: .user,
+            content: messageText,
+            attachedVideoURL: attachedVideoURLString
+        )
+        // Build history BEFORE appending user message to avoid duplication in contents
+        let history = messages.map { msg in
+            ChatMessageDTO(
+                role: msg.role == .user ? .user : .assistant,
+                content: msg.content,
+                attachedVideoURL: msg.attachedVideoURL
+            )
+        }
+
         messages.append(userMessage)
         await syncMessage(userMessage)
-
-        let messageText = inputText
         inputText = ""
         isLoading = true
         quickReplies = []
+        self.attachedVideoURL = nil
+        var shouldAnalyzeAttachedVideo = false
 
         do {
-            let history = messages.map { msg in
-                ChatMessageDTO(
-                    role: msg.role == .user ? .user : .assistant,
-                    content: msg.content,
-                    attachedVideoURL: msg.attachedVideoURL
-                )
-            }
-            let response = try await sendMessageUseCase.execute(message: messageText, history: history)
+            let response = try await sendMessageUseCase.execute(
+                message: messageText,
+                history: history,
+                onToolExecution: { [weak self] status in
+                    guard let self else { return }
+                    self.toolExecutionStatus = status
+                    if status.state == .executing {
+                        let hint = self.toolHintMessage(for: status.toolName)
+                        let hintMessage = ChatMessage(role: .assistant, content: hint)
+                        self.messages.append(hintMessage)
+                    }
+                }
+            )
 
             let assistantMessage = ChatMessage(role: .assistant, content: response.text)
             messages.append(assistantMessage)
             await syncMessage(assistantMessage)
 
-            if let template = response.suggestedTemplate {
-                selectedTemplate = template
-                quickReplies = ["このテンプレートを使う", "他のテンプレートを見る"]
-            } else if let bgm = response.suggestedBGM {
-                selectedBGM = bgm
-                quickReplies = ["このBGMを使う", "他のBGMを見る"]
+            if !response.suggestedTemplates.isEmpty {
+                suggestedTemplates = response.suggestedTemplates
+                selectedTemplate = nil
+                quickReplies = []
             } else {
                 updateQuickReplies(from: response.text)
             }
+            shouldAnalyzeAttachedVideo = true
         } catch {
             errorMessage = error.localizedDescription
         }
 
         isLoading = false
+        toolExecutionStatus = nil
+
+        if shouldAnalyzeAttachedVideo, let attachedVideoURL {
+            Task {
+                await analyzeAttachedVideoInBackground(attachedVideoURL)
+            }
+        }
     }
 
     func confirmTemplate() {
@@ -104,16 +137,20 @@ final class ChatViewModel {
     }
 
     func sendQuickReply(_ reply: String) async {
-        inputText = reply
-        await sendMessage()
+        switch reply {
+        case "このテンプレートを使う":
+            guard selectedTemplate != nil else { return }
+            isTemplateConfirmed = true
+            quickReplies = []
+            await appendUserOperationMessage(reply)
+        default:
+            inputText = reply
+            await sendMessage()
+        }
     }
 
     func selectTemplate(_ template: TemplateDTO) {
         selectedTemplate = template
-    }
-
-    func selectBGM(_ bgm: BGMTrack) {
-        selectedBGM = bgm
     }
 
     func attachVideo(_ url: URL) {
@@ -134,25 +171,17 @@ final class ChatViewModel {
         attachedVideoURL = nil
         streamingText = ""
         quickReplies = []
+        suggestedTemplates = []
         isTemplateConfirmed = false
+        isAnalyzingVideo = false
+        toolExecutionStatus = nil
     }
 
     func startConversation() async {
-        guard messages.isEmpty else { return }
+        guard messages.isEmpty, !initialMessage.isEmpty else { return }
 
-        isLoading = true
-
-        do {
-            let response = try await sendMessageUseCase.execute(message: "こんにちは", history: [])
-            let assistantMessage = ChatMessage(role: .assistant, content: response.text)
-            messages.append(assistantMessage)
-            await syncMessage(assistantMessage)
-            updateQuickReplies(from: response.text)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-
-        isLoading = false
+        inputText = initialMessage
+        await sendMessage()
     }
 
     // MARK: - Private Methods
@@ -160,6 +189,54 @@ final class ChatViewModel {
     private func syncMessage(_ message: ChatMessage) async {
         guard let projectId else { return }
         try? await syncChatHistoryUseCase.execute(projectId: projectId, message: message)
+    }
+
+    private func appendUserOperationMessage(_ text: String) async {
+        let message = ChatMessage(role: .user, content: text)
+        messages.append(message)
+        await syncMessage(message)
+    }
+
+    private func analyzeAttachedVideoInBackground(_ url: URL) async {
+        guard !isAnalyzingVideo else { return }
+        isAnalyzingVideo = true
+        defer { isAnalyzingVideo = false }
+
+        do {
+            let result = try await analyzeVideoUseCase.execute(videoURL: url)
+            let summary = makeVideoAnalysisSummary(result)
+            let assistantMessage = ChatMessage(role: .assistant, content: summary)
+            messages.append(assistantMessage)
+            await syncMessage(assistantMessage)
+        } catch {
+            errorMessage = "動画解析に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    private func makeVideoAnalysisSummary(_ result: VideoAnalysisResult) -> String {
+        guard !result.segments.isEmpty else {
+            return "動画を解析しました。大きなシーン分割は検出できませんでした。"
+        }
+
+        let lines = result.segments.prefix(3).enumerated().map { index, segment in
+            "\(index + 1). \(Int(segment.startSeconds))s-\(Int(segment.endSeconds))s: \(segment.description)"
+        }
+
+        return """
+        動画の解析が完了しました。主なシーンは次の通りです。
+        \(lines.joined(separator: "\n"))
+        """
+    }
+
+    private func toolHintMessage(for toolName: String) -> String {
+        switch toolName {
+        case "templateSearch":
+            return "ぴったりのテンプレートを探してみますね！"
+        case "videoAnalysis":
+            return "動画を分析してみますね！"
+        default:
+            return "少々お待ちください..."
+        }
     }
 
     private func updateQuickReplies(from responseText: String) {

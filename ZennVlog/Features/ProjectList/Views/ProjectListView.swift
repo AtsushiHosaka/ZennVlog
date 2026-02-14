@@ -25,14 +25,33 @@ struct ProjectListView: View {
             .fullScreenCover(isPresented: $showChat) {
                 let container = DIContainer.shared
                 let chatViewModel = ChatViewModel(
-                    sendMessageUseCase: SendMessageWithAIUseCase(repository: container.geminiRepository),
+                    sendMessageUseCase: SendMessageWithAIUseCase(
+                        repository: container.geminiRepository,
+                        templateRepository: container.templateRepository
+                    ),
                     fetchTemplatesUseCase: FetchTemplatesUseCase(repository: container.templateRepository),
                     analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
                     syncChatHistoryUseCase: SyncChatHistoryUseCase(),
                     initializeChatSessionUseCase: InitializeChatSessionUseCase()
                 )
-                ChatView(viewModel: chatViewModel) { _, _ in
-                    showChat = false
+                ChatView(viewModel: chatViewModel) { template in
+                    Task {
+                        await viewModel.handleTemplateConfirmed(template: template)
+                        showChat = false
+                    }
+                }
+            }
+            .navigationDestination(isPresented: $viewModel.showRecording) {
+                if let project = viewModel.projectForRecording {
+                    let container = DIContainer.shared
+                    RecordingView(viewModel: RecordingViewModel(
+                        project: project,
+                        saveVideoAssetUseCase: SaveVideoAssetUseCase(repository: container.projectRepository),
+                        generateGuideImageUseCase: GenerateGuideImageUseCase(repository: container.imagenRepository),
+                        analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
+                        trimVideoUseCase: TrimVideoUseCase(),
+                        deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository)
+                    ))
                 }
             }
         }
@@ -95,9 +114,14 @@ struct ProjectListView: View {
         .padding()
     }
 
+    private let columns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
+    ]
+
     private var projectList: some View {
         ScrollView {
-            LazyVStack(spacing: 12) {
+            LazyVGrid(columns: columns, spacing: 12) {
                 ForEach(viewModel.projects, id: \.id) { project in
                     NavigationLink {
                         let container = DIContainer.shared
@@ -127,14 +151,19 @@ struct ProjectListView: View {
 #Preview("プロジェクトあり") {
     let container = DIContainer.preview
     let useCase = FetchProjectsUseCase(repository: container.projectRepository)
-    let viewModel = ProjectListViewModel(fetchProjectsUseCase: useCase)
+    let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: container.projectRepository)
+    let viewModel = ProjectListViewModel(
+        fetchProjectsUseCase: useCase,
+        createProjectFromTemplateUseCase: createProjectUseCase
+    )
     return ProjectListView(viewModel: viewModel)
 }
 
 #Preview("空状態") {
     // 空のリポジトリを使用
     let viewModel = ProjectListViewModel(
-        fetchProjectsUseCase: FetchProjectsUseCase(
+        fetchProjectsUseCase: FetchProjectsUseCase(repository: MockProjectRepository(emptyForTesting: true)),
+        createProjectFromTemplateUseCase: CreateProjectFromTemplateUseCase(
             repository: MockProjectRepository(emptyForTesting: true)
         )
     )
@@ -143,7 +172,8 @@ struct ProjectListView: View {
 
 #Preview("ローディング") {
     let viewModel = ProjectListViewModel(
-        fetchProjectsUseCase: FetchProjectsUseCase(
+        fetchProjectsUseCase: FetchProjectsUseCase(repository: MockProjectRepository()),
+        createProjectFromTemplateUseCase: CreateProjectFromTemplateUseCase(
             repository: MockProjectRepository()
         )
     )
@@ -153,7 +183,8 @@ struct ProjectListView: View {
 
 #Preview("エラー状態") {
     let viewModel = ProjectListViewModel(
-        fetchProjectsUseCase: FetchProjectsUseCase(
+        fetchProjectsUseCase: FetchProjectsUseCase(repository: MockProjectRepository()),
+        createProjectFromTemplateUseCase: CreateProjectFromTemplateUseCase(
             repository: MockProjectRepository()
         )
     )

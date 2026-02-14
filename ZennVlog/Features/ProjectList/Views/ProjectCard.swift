@@ -1,54 +1,52 @@
 import SwiftUI
 
 /// プロジェクトカードコンポーネント
-/// 横型カード（左：サムネイル、右：情報）
+/// 縦型カード（上：サムネイル、下：情報）
 struct ProjectCard: View {
     let project: Project
 
     var body: some View {
-        HStack(spacing: 12) {
-            // サムネイル（16:9角丸）
-            thumbnailView
-
-            // 情報
-            VStack(alignment: .leading, spacing: 4) {
-                Text(project.name)
-                    .font(.headline)
-                    .lineLimit(1)
-
-                if !project.theme.isEmpty {
-                    Text(project.theme)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-
-                HStack {
-                    statusBadge
-                    Spacer()
-                    Text(relativeTimeString(from: project.updatedAt))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+        thumbnailView
+            .overlay(alignment: .topLeading) {
+                statusBadge
+                    .padding(6)
             }
+            .overlay(alignment: .bottomLeading) {
+                // タイトル・情報オーバーレイ
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(project.name)
+                        .font(.headline)
+                        .lineLimit(2)
 
-            Spacer()
+                    if !project.theme.isEmpty {
+                        Text(project.theme)
+                            .font(.caption)
+                            .lineLimit(1)
+                    }
 
-            Image(systemName: "chevron.right")
-                .foregroundColor(.secondary)
-        }
-        .padding()
-        .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(12)
+                    Text(relativeTimeString(from: project.updatedAt))
+                        .font(.caption2)
+                }
+                .foregroundColor(.white)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    LinearGradient(
+                        colors: [.black.opacity(0.7), .clear],
+                        startPoint: .bottom,
+                        endPoint: .top
+                    )
+                )
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     // MARK: - Subviews
 
     private var thumbnailView: some View {
-        RoundedRectangle(cornerRadius: 8)
+        Rectangle()
             .fill(Color.gray.opacity(0.3))
-            .aspectRatio(16/9, contentMode: .fit)
-            .frame(width: 80)
+            .aspectRatio(9/16, contentMode: .fit)
             .overlay {
                 Image(systemName: "video.fill")
                     .foregroundColor(.gray)
@@ -61,7 +59,7 @@ struct ProjectCard: View {
             .fontWeight(.medium)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(statusBackgroundColor.opacity(0.25))
+            .background(.ultraThinMaterial)
             .foregroundColor(statusTextColor)
             .cornerRadius(4)
     }
@@ -111,6 +109,7 @@ struct ProjectCard: View {
             updatedAt: Date().addingTimeInterval(-3600)
         )
     )
+    .frame(width: 180)
     .padding()
 }
 
@@ -123,6 +122,7 @@ struct ProjectCard: View {
             updatedAt: Date().addingTimeInterval(-86400)
         )
     )
+    .frame(width: 180)
     .padding()
 }
 
@@ -135,5 +135,6 @@ struct ProjectCard: View {
             updatedAt: Date()
         )
     )
+    .frame(width: 180)
     .padding()
 }
