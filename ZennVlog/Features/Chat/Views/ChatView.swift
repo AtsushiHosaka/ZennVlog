@@ -32,27 +32,28 @@ struct ChatView: View {
                         }
                     }
                     .padding(.vertical, 8)
-                }
-
-                ChatInputView(
-                    text: $viewModel.inputText,
-                    isLoading: viewModel.isLoading,
-                    attachedVideoURL: viewModel.attachedVideoURL,
-                    onSend: {
-                        Task {
-                            await viewModel.sendMessage()
-                            scrollToBottom()
+                } else {
+                    ChatInputView(
+                        text: $viewModel.inputText,
+                        isLoading: viewModel.isLoading,
+                        attachedVideoURL: viewModel.attachedVideoURL,
+                        onSend: {
+                            Task {
+                                await viewModel.sendMessage()
+                                scrollToBottom()
+                            }
+                        },
+                        onAttachVideo: {
+                            showPhotoPicker = true
+                        },
+                        onRemoveVideo: {
+                            viewModel.removeAttachedVideo()
                         }
-                    },
-                    onAttachVideo: {
-                        showPhotoPicker = true
-                    },
-                    onRemoveVideo: {
-                        viewModel.removeAttachedVideo()
-                    }
-                )
+                    )
+                }
             }
-            .navigationTitle("Vlogを作ろう")
+            .navigationTitle(viewModel.chatMode == .customCreation ? "オリジナルVlogを作る" : "Vlogを作ろう")
+
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -233,7 +234,7 @@ struct ChatView: View {
     }
 }
 
-#Preview {
+#Preview("テンプレート選択") {
     let container = DIContainer.preview
     let viewModel = ChatViewModel(
         sendMessageUseCase: SendMessageWithAIUseCase(
@@ -244,6 +245,22 @@ struct ChatView: View {
         analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
         syncChatHistoryUseCase: SyncChatHistoryUseCase(),
         initializeChatSessionUseCase: InitializeChatSessionUseCase()
+    )
+    ChatView(viewModel: viewModel) { _ in }
+}
+
+#Preview("初期状態") {
+    let container = DIContainer.preview
+    let viewModel = ChatViewModel(
+        sendMessageUseCase: SendMessageWithAIUseCase(
+            repository: container.geminiRepository,
+            templateRepository: container.templateRepository
+        ),
+        fetchTemplatesUseCase: FetchTemplatesUseCase(repository: container.templateRepository),
+        analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
+        syncChatHistoryUseCase: SyncChatHistoryUseCase(),
+        initializeChatSessionUseCase: InitializeChatSessionUseCase(),
+        initialMessage: "週末の旅行Vlog"
     )
     ChatView(viewModel: viewModel) { _ in }
 }

@@ -26,6 +26,13 @@ actor MockGeminiRepository: GeminiRepositoryProtocol {
         tools: [[String: Any]]
     ) async throws -> GeminiTurnResponse {
         try await simulateNetworkDelay()
+
+        let isCustomMode = systemInstruction.contains("custom video templates from scratch")
+
+        if isCustomMode {
+            return generateCustomModeTurnResponse(contents: contents)
+        }
+
         // Mock always returns text (no function call), so the FC loop ends in 1 turn
         let lastUserContent = contents.last { ($0["role"] as? String) == "user" }
         let lastMessage = (lastUserContent?["parts"] as? [[String: Any]])?
@@ -36,6 +43,95 @@ actor MockGeminiRepository: GeminiRepositoryProtocol {
     }
 
     // MARK: - Private Methods
+
+    // MARK: - Custom Creation Mock
+
+    private func generateCustomModeTurnResponse(contents: [[String: Any]]) -> GeminiTurnResponse {
+        // function response がある場合 → テンプレート生成完了後の最終応答
+        let hasFunctionResponse = contents.contains { content in
+            (content["role"] as? String) == "function"
+        }
+        if hasFunctionResponse {
+            let response = GeminiChatResponse(
+                text: "オリジナルテンプレートを作成しました！\n\nこちらの構成でいかがでしょうか？気になる点があれば修正できますよ。",
+                suggestedTemplates: [mockCustomTemplate],
+                quickReplies: ["はい", "修正したい"]
+            )
+            return .text(encodeResponseAsJSON(response))
+        }
+
+        // ユーザーメッセージ数で状態判定
+        let userMessages = contents.filter { ($0["role"] as? String) == "user" }
+        let userMessageCount = userMessages.count
+
+        switch userMessageCount {
+        case 0, 1:
+            // テーマを聞く
+            let response = GeminiChatResponse(
+                text: "オリジナルVlogを一緒に作りましょう！\n\nまず、どんなテーマのVlogを撮りたいですか？\n例：カフェ巡り、旅行、日常、料理など",
+                suggestedTemplates: [],
+                quickReplies: ["カフェ巡り", "旅行", "日常", "料理"]
+            )
+            return .text(encodeResponseAsJSON(response))
+        case 2:
+            // 長さを聞く
+            let response = GeminiChatResponse(
+                text: "いいテーマですね！\n\n動画の長さはどのくらいにしますか？",
+                suggestedTemplates: [],
+                quickReplies: ["30秒", "1分", "3分", "5分"]
+            )
+            return .text(encodeResponseAsJSON(response))
+        case 3:
+            // シーン数を聞く
+            let response = GeminiChatResponse(
+                text: "了解です！\n\nシーンはいくつくらいに分けますか？",
+                suggestedTemplates: [],
+                quickReplies: ["3", "5", "7", "おまかせ"]
+            )
+            return .text(encodeResponseAsJSON(response))
+        default:
+            // generateCustomTemplate Function Call を返す
+            let segmentsJSON = """
+            [{"order":0,"startSec":0,"endSec":5,"description":"オープニング"},\
+            {"order":1,"startSec":5,"endSec":20,"description":"メインシーン1"},\
+            {"order":2,"startSec":20,"endSec":40,"description":"メインシーン2"},\
+            {"order":3,"startSec":40,"endSec":55,"description":"メインシーン3"},\
+            {"order":4,"startSec":55,"endSec":60,"description":"エンディング"}]
+            """
+            let args: [String: String] = [
+                "name": "カフェ巡りVlog",
+                "description": "お気に入りのカフェを巡るVlog",
+                "explanation": "オープニングで期待感を演出し、各カフェの雰囲気と料理を紹介、最後にまとめ",
+                "totalDuration": "60",
+                "sceneCount": "5",
+                "segments": segmentsJSON
+            ]
+            let rawPart: [String: Any] = [
+                "functionCall": [
+                    "name": "generateCustomTemplate",
+                    "args": args
+                ]
+            ]
+            return .functionCall(name: "generateCustomTemplate", args: args, rawPart: rawPart)
+        }
+    }
+
+    private var mockCustomTemplate: TemplateDTO {
+        TemplateDTO(
+            id: "custom-mock",
+            name: "カフェ巡りVlog",
+            description: "お気に入りのカフェを巡るVlog",
+            referenceVideoUrl: "",
+            explanation: "オープニングで期待感を演出し、各カフェの雰囲気と料理を紹介、最後にまとめ",
+            segments: [
+                SegmentDTO(order: 0, startSec: 0, endSec: 5, description: "オープニング"),
+                SegmentDTO(order: 1, startSec: 5, endSec: 20, description: "メインシーン1"),
+                SegmentDTO(order: 2, startSec: 20, endSec: 40, description: "メインシーン2"),
+                SegmentDTO(order: 3, startSec: 40, endSec: 55, description: "メインシーン3"),
+                SegmentDTO(order: 4, startSec: 55, endSec: 60, description: "エンディング")
+            ]
+        )
+    }
 
     private func extractHistoryFromContents(_ contents: [[String: Any]]) -> [ChatMessageDTO] {
         contents.compactMap { content in
@@ -51,7 +147,10 @@ actor MockGeminiRepository: GeminiRepositoryProtocol {
     }
 
     private func encodeResponseAsJSON(_ response: GeminiChatResponse) -> String {
-        var json: [String: Any] = ["text": response.text]
+        var json: [String: Any] = [
+            "text": response.text,
+            "quickReplies": response.quickReplies
+        ]
 
         if let template = response.suggestedTemplates.first {
             json["suggestedTemplate"] = [
@@ -129,7 +228,7 @@ actor MockGeminiRepository: GeminiRepositoryProtocol {
             return GeminiChatResponse(
                 text: "こんにちは！Vlog作成をお手伝いします。\n\nまず、どんなテーマのVlogを作りたいですか？\n例：日常、旅行、グルメ、趣味など",
                 suggestedTemplates: [],
-
+                quickReplies: ["日常", "旅行", "グルメ", "趣味"]
             )
         }
 
@@ -138,7 +237,7 @@ actor MockGeminiRepository: GeminiRepositoryProtocol {
             return GeminiChatResponse(
                 text: "素敵ですね！\n\n構成は決まっていますか？決まっていなければ、いくつかテンプレートを提案できます。",
                 suggestedTemplates: [],
-
+                quickReplies: ["提案してください", "自分で決める"]
             )
         }
 
@@ -160,7 +259,8 @@ actor MockGeminiRepository: GeminiRepositoryProtocol {
             )
             return GeminiChatResponse(
                 text: "こちらのテンプレートはいかがでしょうか？\n\n【1日のVlog】\n朝→昼→夜の流れで、日常の何気ない瞬間を切り取ります。\n\nこの構成でよろしいですか？",
-                suggestedTemplates: [template]
+                suggestedTemplates: [template],
+                quickReplies: ["はい", "いいえ"]
             )
         }
 
@@ -168,13 +268,15 @@ actor MockGeminiRepository: GeminiRepositoryProtocol {
         if stateIndex == 3 && (lowerMessage.contains("はい") || lowerMessage.contains("いい") || lowerMessage.contains("ok") || lowerMessage.contains("お願い")) {
             return GeminiChatResponse(
                 text: "準備が整いました！\n\n撮影を始めましょう。各セグメントの説明に沿って動画を撮影してください。",
-                suggestedTemplates: []
+                suggestedTemplates: [],
+                quickReplies: []
             )
         }
 
         return GeminiChatResponse(
             text: "承知しました。他にご質問があればお聞きください。",
-            suggestedTemplates: []
+            suggestedTemplates: [],
+            quickReplies: []
         )
     }
 }

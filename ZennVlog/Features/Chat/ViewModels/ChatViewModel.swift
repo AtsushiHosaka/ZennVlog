@@ -37,6 +37,7 @@ final class ChatViewModel {
     // MARK: - Properties
 
     let projectId: UUID?
+    var chatMode: ChatMode?
 
     // MARK: - Init
 
@@ -49,7 +50,8 @@ final class ChatViewModel {
         syncChatHistoryUseCase: SyncChatHistoryUseCase,
         initializeChatSessionUseCase: InitializeChatSessionUseCase,
         projectId: UUID? = nil,
-        initialMessage: String = ""
+        initialMessage: String = "",
+        chatMode: ChatMode? = nil
     ) {
         self.sendMessageUseCase = sendMessageUseCase
         self.fetchTemplatesUseCase = fetchTemplatesUseCase
@@ -58,12 +60,18 @@ final class ChatViewModel {
         self.initializeChatSessionUseCase = initializeChatSessionUseCase
         self.projectId = projectId
         self.initialMessage = initialMessage
+        self.chatMode = chatMode
     }
 
     // MARK: - Public Methods
 
     func sendMessage() async {
         guard !inputText.isEmpty else { return }
+
+        guard let chatMode else {
+            quickReplies = ["テンプレートから選ぶ", "オリジナルで作る"]
+            return
+        }
 
         let messageText = inputText
         let attachedVideoURLString = attachedVideoURL?.absoluteString
@@ -94,6 +102,7 @@ final class ChatViewModel {
             let response = try await sendMessageUseCase.execute(
                 message: messageText,
                 history: history,
+                chatMode: chatMode,
                 onToolExecution: { [weak self] status in
                     guard let self else { return }
                     self.toolExecutionStatus = status
@@ -112,9 +121,9 @@ final class ChatViewModel {
             if !response.suggestedTemplates.isEmpty {
                 suggestedTemplates = response.suggestedTemplates
                 selectedTemplate = nil
-                quickReplies = []
+                quickReplies = ["オリジナルで作る"]
             } else {
-                updateQuickReplies(from: response.text)
+                quickReplies = response.quickReplies
             }
             shouldAnalyzeAttachedVideo = true
         } catch {
@@ -138,6 +147,20 @@ final class ChatViewModel {
 
     func sendQuickReply(_ reply: String) async {
         switch reply {
+        case "テンプレートから選ぶ":
+            chatMode = .templateSelection
+            quickReplies = []
+            await appendUserOperationMessage(reply)
+            inputText = initialMessage
+            await sendMessage()
+        case "オリジナルで作る":
+            chatMode = .customCreation
+            quickReplies = []
+            suggestedTemplates = []
+            selectedTemplate = nil
+            await appendUserOperationMessage(reply)
+            inputText = initialMessage
+            await sendMessage()
         case "このテンプレートを使う":
             guard selectedTemplate != nil else { return }
             isTemplateConfirmed = true
@@ -175,13 +198,17 @@ final class ChatViewModel {
         isTemplateConfirmed = false
         isAnalyzingVideo = false
         toolExecutionStatus = nil
+        chatMode = nil
     }
 
     func startConversation() async {
         guard messages.isEmpty, !initialMessage.isEmpty else { return }
 
-        inputText = initialMessage
-        await sendMessage()
+        let greeting = "「\(initialMessage)」のVlog、いいですね！どちらの方法で作りますか？"
+        let assistantMessage = ChatMessage(role: .assistant, content: greeting)
+        messages.append(assistantMessage)
+        await syncMessage(assistantMessage)
+        quickReplies = ["テンプレートから選ぶ", "オリジナルで作る"]
     }
 
     // MARK: - Private Methods
@@ -234,22 +261,11 @@ final class ChatViewModel {
             return "ぴったりのテンプレートを探してみますね！"
         case "videoAnalysis":
             return "動画を分析してみますね！"
+        case "generateCustomTemplate":
+            return "オリジナルテンプレートを作成しますね！"
         default:
             return "少々お待ちください..."
         }
     }
 
-    private func updateQuickReplies(from responseText: String) {
-        let text = responseText.lowercased()
-
-        if text.contains("よろしいですか") || text.contains("いかがでしょうか") || text.contains("どうですか") {
-            quickReplies = ["はい", "いいえ"]
-        } else if text.contains("テーマ") || text.contains("どんな") {
-            quickReplies = ["日常", "旅行", "グルメ", "趣味"]
-        } else if text.contains("構成") || text.contains("テンプレート") {
-            quickReplies = ["提案してください", "自分で決める"]
-        } else {
-            quickReplies = []
-        }
-    }
 }
