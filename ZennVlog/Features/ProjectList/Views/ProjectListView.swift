@@ -131,7 +131,8 @@ struct ProjectListView: View {
                             generateGuideImageUseCase: GenerateGuideImageUseCase(repository: container.imagenRepository),
                             analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
                             trimVideoUseCase: TrimVideoUseCase(),
-                            deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository)
+                            deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository),
+                            photoLibraryService: container.photoLibraryService
                         )
                         RecordingView(viewModel: recordingViewModel)
                     } label: {

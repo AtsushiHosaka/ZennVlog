@@ -9,6 +9,7 @@ final class VideoAsset {
     var duration: Double
     var trimStartSeconds: Double = 0.0
     var createdAt: Date
+    var photoAssetIdentifier: String?
 
     init(
         id: UUID = UUID(),
