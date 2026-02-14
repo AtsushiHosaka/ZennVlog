@@ -35,6 +35,8 @@ struct ToolExecutionStatus: Identifiable, Sendable {
             return state == .executing ? "テンプレートを検索中..." : "テンプレート検索完了"
         case "videoAnalysis":
             return state == .executing ? "動画を分析中..." : "動画分析完了"
+        case "generateCustomTemplate":
+            return state == .executing ? "オリジナルテンプレートを作成中..." : "テンプレート作成完了"
         default:
             return state == .executing ? "\(toolName)を実行中..." : "\(toolName)完了"
         }
