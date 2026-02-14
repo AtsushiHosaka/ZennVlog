@@ -187,7 +187,7 @@ actor VideoExporter {
         size: CGSize,
         duration: CMTime,
         subtitles: [Subtitle],
-        segments: [Segment]
+        segments _: [Segment]
     ) -> AVMutableVideoComposition {
         let videoComposition = AVMutableVideoComposition()
         videoComposition.renderSize = size
@@ -200,26 +200,15 @@ actor VideoExporter {
         let videoLayer = CALayer()
         videoLayer.frame = CGRect(origin: .zero, size: size)
 
-        // セグメントごとのテロップレイヤー追加
-        // セグメントの累積開始時刻を計算（エクスポート後のタイムライン上の位置）
-        let sortedSegments = segments.sorted { $0.order < $1.order }
-        var segmentStartTimes: [Int: Double] = [:]
-        var cumulativeTime: Double = 0
-        for segment in sortedSegments {
-            segmentStartTimes[segment.order] = cumulativeTime
-            cumulativeTime += segment.endSeconds - segment.startSeconds
-        }
+        // 時間範囲ベースでテロップレイヤーを追加
+        let videoDuration = CMTimeGetSeconds(duration)
 
         for subtitle in subtitles {
             guard !subtitle.text.isEmpty else { continue }
 
-            guard let segment = segments.first(where: { $0.order == subtitle.segmentOrder }) else {
-                continue
-            }
-
-            let segmentDuration = segment.endSeconds - segment.startSeconds
-            guard let showTime = segmentStartTimes[subtitle.segmentOrder] else { continue }
-            let hideTime = showTime + segmentDuration
+            let showTime = max(0, subtitle.startSeconds)
+            let hideTime = min(videoDuration, subtitle.endSeconds)
+            guard hideTime > showTime else { continue }
 
             let textLayer = CATextLayer()
             let fontSize: CGFloat = size.height * 0.04
@@ -235,15 +224,19 @@ actor VideoExporter {
             textLayer.contentsScale = UIScreen.main.scale
 
             let textHeight = fontSize * 2
-            let bottomMargin = size.height * 0.1
+            let textWidth = size.width * 0.8
+            let halfWidth = textWidth / 2
+            let halfHeight = textHeight / 2
+            let centerX = min(max(size.width * subtitle.positionXRatio, halfWidth), size.width - halfWidth)
+            let centerY = min(max(size.height * subtitle.positionYRatio, halfHeight), size.height - halfHeight)
             textLayer.frame = CGRect(
-                x: size.width * 0.1,
-                y: bottomMargin,
-                width: size.width * 0.8,
+                x: centerX - halfWidth,
+                y: centerY - halfHeight,
+                width: textWidth,
                 height: textHeight
             )
 
-            // セグメントのタイミングに基づく表示/非表示アニメーション
+            // 指定時間範囲で表示/非表示アニメーション
             textLayer.opacity = 0
 
             let showAnimation = CABasicAnimation(keyPath: "opacity")
@@ -270,6 +263,7 @@ actor VideoExporter {
 
         let parentLayer = CALayer()
         parentLayer.frame = CGRect(origin: .zero, size: size)
+        parentLayer.isGeometryFlipped = true
         parentLayer.addSublayer(videoLayer)
         parentLayer.addSublayer(animationLayer)
 

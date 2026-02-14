@@ -1,47 +1,27 @@
 import SwiftUI
 
 /// 動画プレビュー・編集画面
-/// テロップやBGMを追加して最終調整
 struct PreviewView: View {
     @State var viewModel: PreviewViewModel
+    let container: DIContainer
+
     @Environment(\.dismiss) private var dismiss
+    @State private var showShareView = false
+    @State private var exportedURL: URL?
+    @State private var isPreviewScrubbing = false
+    @State private var previewScrubStartTime: Double = 0
+    @State private var controlsPanelHeight: CGFloat = 0
+    @State private var isDraggingSubtitle = false
+    @State private var presentedSubtitleSheet: SubtitleSheetState?
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // 動画プレーヤー領域
-                videoPlayerSection
+            ZStack(alignment: .bottom) {
+                previewBackground
 
-                // タイムライン
-                PreviewTimeline(
-                    segments: viewModel.segments,
-                    currentTime: viewModel.currentTime,
-                    onSegmentTap: { index in
-                        viewModel.seekToSegment(index)
-                    }
-                )
-
-                // コントロールエリア
-                controlSection
-
-                // テロップ編集
-                SubtitleEditor(
-                    segmentIndex: viewModel.currentSegmentIndex,
-                    subtitleText: $viewModel.subtitleText,
-                    onSave: {
-                        Task {
-                            await viewModel.saveSubtitle()
-                        }
-                    }
-                )
-                .padding(.horizontal)
-
-                // BGMコントロール
-                bgmSection
-
-                // 書き出しボタン
-                exportSection
+                controlsPanel
             }
+            .background(Color.black.ignoresSafeArea())
             .navigationTitle("プレビュー")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -52,20 +32,72 @@ struct PreviewView: View {
                         Image(systemName: "chevron.left")
                     }
                 }
-            }
-            .sheet(isPresented: $viewModel.showBGMSelector) {
-                BGMSelector(
-                    bgmTracks: viewModel.bgmTracks,
-                    selectedBGM: viewModel.selectedBGM,
-                    onSelect: { track in
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
                         Task {
-                            await viewModel.selectBGM(track)
+                            await handleExport()
                         }
+                    } label: {
+                        if viewModel.isExporting {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                    }
+                    .disabled(viewModel.isExporting)
+                }
+            }
+            .sheet(item: $presentedSubtitleSheet) { state in
+                SubtitleEditSheet(
+                    initialState: state,
+                    maxDuration: max(viewModel.duration, 0),
+                    onSave: { draft in
+                        let success = await viewModel.saveSubtitle(draft)
+                        if success {
+                            presentedSubtitleSheet = nil
+                        }
+                        return success
+                    },
+                    onDelete: { subtitleId in
+                        let success = await viewModel.deleteSubtitle(subtitleId: subtitleId)
+                        if success {
+                            presentedSubtitleSheet = nil
+                        }
+                        return success
                     },
                     onDismiss: {
-                        viewModel.showBGMSelector = false
+                        presentedSubtitleSheet = nil
+                        viewModel.dismissSubtitleSheet()
                     }
                 )
+            }
+            .sheet(isPresented: $viewModel.showBGMSettingsSheet) {
+                BGMSettingsSheet(
+                    bgmTracks: viewModel.bgmTracks,
+                    initialSelectedBGM: viewModel.selectedBGM,
+                    initialVolume: viewModel.bgmVolume,
+                    onSave: { track, volume in
+                        await viewModel.saveBGMSettings(track: track, volume: volume)
+                    },
+                    onDismiss: {
+                        viewModel.showBGMSettingsSheet = false
+                    }
+                )
+            }
+            .fullScreenCover(isPresented: $showShareView) {
+                if let exportedURL {
+                    ShareView(
+                        viewModel: ShareViewModel(
+                            project: viewModel.project,
+                            exportedVideoURL: exportedURL,
+                            photoLibrary: container.photoLibraryService,
+                            activityController: container.activityControllerService
+                        )
+                    )
+                } else {
+                    Text("共有する動画が見つかりません")
+                }
             }
             .alert("エラー", isPresented: .constant(viewModel.errorMessage != nil)) {
                 Button("OK") {
@@ -82,125 +114,172 @@ struct PreviewView: View {
         }
     }
 
-    // MARK: - Sections
+    // MARK: - Layout
 
-    private var videoPlayerSection: some View {
-        ZStack {
-            // 動画プレーヤー
-            VideoPlayerView(player: nil)
-                .aspectRatio(16/9, contentMode: .fit)
-                .background(Color.black)
+    private var previewBackground: some View {
+        GeometryReader { proxy in
+            let activeSubtitle = viewModel.activeSubtitle(at: viewModel.currentTime)
 
-            // テロップオーバーレイ
-            SubtitleOverlay(text: viewModel.subtitleText)
-        }
-    }
+            ZStack {
+                VideoPlayerView(player: viewModel.player)
+                    .aspectRatio(16 / 9, contentMode: .fill)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .clipped()
+                    .background(Color.black)
+                    .contentShape(Rectangle())
+                    .gesture(previewScrubGesture)
 
-    private var controlSection: some View {
-        HStack(spacing: 20) {
-            // 再生/一時停止ボタン
-            Button {
-                viewModel.togglePlayPause()
-            } label: {
-                Image(systemName: viewModel.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 44))
-                    .foregroundColor(.accentColor)
+                SubtitleOverlay(
+                    subtitle: activeSubtitle,
+                    bottomBlockedInset: controlsPanelHeight + 6,
+                    onDragStart: {
+                        isDraggingSubtitle = true
+                        if isPreviewScrubbing {
+                            isPreviewScrubbing = false
+                            viewModel.endTimelineScrub()
+                        }
+                    },
+                    onDragEnd: {
+                        isDraggingSubtitle = false
+                    },
+                    onPositionCommit: { subtitleId, xRatio, yRatio in
+                        viewModel.updateSubtitlePosition(
+                            subtitleId: subtitleId,
+                            positionXRatio: xRatio,
+                            positionYRatio: yRatio
+                        )
+                    }
+                )
+                .id(activeSubtitle?.id)
+                .frame(width: proxy.size.width, height: proxy.size.height)
             }
-
-            // 時間表示
-            Text(formatTime(viewModel.currentTime))
-                .font(.caption)
-                .monospacedDigit()
-
-            // シークバー
-            Slider(value: $viewModel.currentTime, in: 0...max(viewModel.duration, 1))
-                .disabled(viewModel.duration == 0)
-
-            Text(formatTime(viewModel.duration))
-                .font(.caption)
-                .monospacedDigit()
         }
-        .padding()
+        .ignoresSafeArea(edges: .top)
     }
 
-    private var bgmSection: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text("BGM")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+    private var controlsPanel: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 12) {
+                Button {
+                    viewModel.togglePlayPause()
+                } label: {
+                    Image(systemName: viewModel.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 34))
+                        .foregroundColor(.white)
+                }
 
-                Text(viewModel.selectedBGM?.title ?? "未選択")
-                    .foregroundColor(.secondary)
+                Text(formatTime(viewModel.currentTime))
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundColor(.white)
+
+                Text("/")
+                    .foregroundColor(.white.opacity(0.7))
+
+                Text(formatTime(viewModel.duration))
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundColor(.white.opacity(0.8))
 
                 Spacer()
 
-                Button("変更") {
-                    viewModel.showBGMSelector = true
+                Button {
+                    viewModel.showBGMSettingsSheet = true
+                } label: {
+                    Image(systemName: "music.note")
+                        .font(.footnote.weight(.semibold))
+                        .padding(8)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .buttonStyle(.borderedProminent)
+                .tint(.white.opacity(0.18))
             }
 
-            HStack {
-                Image(systemName: "speaker.fill")
-                    .foregroundColor(.secondary)
-
-                Slider(value: $viewModel.bgmVolume, in: 0...1)
-
-                Text("\(Int(viewModel.bgmVolume * 100))%")
-                    .font(.caption)
-                    .monospacedDigit()
-                    .frame(width: 40)
-            }
+            LinkedTimelineTracksView(
+                duration: viewModel.duration,
+                currentTime: viewModel.currentTime,
+                videoSegments: viewModel.timelineSegments,
+                subtitles: viewModel.subtitles,
+                onSeek: { time in
+                    viewModel.seek(to: time)
+                },
+                onBeginScrub: {
+                    viewModel.beginTimelineScrub()
+                },
+                onEndScrub: {
+                    viewModel.endTimelineScrub()
+                },
+                onSubtitleTap: { subtitle in
+                    viewModel.showEditSubtitleSheet(subtitle)
+                    presentedSubtitleSheet = viewModel.subtitleSheetState
+                },
+                onAddSubtitle: {
+                    viewModel.showNewSubtitleSheet(at: viewModel.currentTime)
+                    presentedSubtitleSheet = viewModel.subtitleSheetState
+                }
+            )
         }
-        .padding()
-        .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(12)
-        .padding(.horizontal)
-    }
-
-    private var exportSection: some View {
-        VStack(spacing: 8) {
-            Button {
-                Task {
-                    await viewModel.exportVideo()
-                }
-            } label: {
-                HStack {
-                    if viewModel.isExporting {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .black))
-                    } else {
-                        Image(systemName: "square.and.arrow.up.fill")
-                    }
-                    Text(viewModel.isExporting ? "書き出し中..." : "書き出して共有")
-                }
-                .font(.headline)
-                .foregroundColor(.black)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(viewModel.isExporting ? Color.gray : Color.accentColor)
-                .cornerRadius(12)
-            }
-            .disabled(viewModel.isExporting)
-
-            if viewModel.isExporting {
-                ProgressView(value: viewModel.exportProgress)
-                Text("\(Int(viewModel.exportProgress * 100))%")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding()
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.horizontal, 10)
+        .padding(.bottom, 8)
+        .readHeight { controlsPanelHeight = $0 }
     }
 
     // MARK: - Helpers
 
+    private func handleExport() async {
+        guard let url = await viewModel.exportVideo() else { return }
+        exportedURL = url
+        showShareView = true
+    }
+
+    private var previewScrubGesture: some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { value in
+                guard !isDraggingSubtitle else { return }
+                if !isPreviewScrubbing {
+                    isPreviewScrubbing = true
+                    previewScrubStartTime = viewModel.currentTime
+                    viewModel.beginTimelineScrub()
+                }
+
+                let pointsPerSecond: CGFloat = 70
+                let deltaSeconds = Double(-value.translation.width / pointsPerSecond)
+                viewModel.seek(to: max(0, previewScrubStartTime + deltaSeconds))
+            }
+            .onEnded { _ in
+                guard !isDraggingSubtitle else { return }
+                guard isPreviewScrubbing else { return }
+                isPreviewScrubbing = false
+                viewModel.endTimelineScrub()
+            }
+    }
+
     private func formatTime(_ seconds: Double) -> String {
-        let mins = Int(seconds) / 60
-        let secs = Int(seconds) % 60
+        let total = Int(max(0, seconds).rounded(.down))
+        let mins = total / 60
+        let secs = total % 60
         return String(format: "%d:%02d", mins, secs)
+    }
+}
+
+private struct ControlsPanelHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private extension View {
+    func readHeight(_ onChange: @escaping (CGFloat) -> Void) -> some View {
+        background(
+            GeometryReader { proxy in
+                Color.clear
+                    .preference(key: ControlsPanelHeightPreferenceKey.self, value: proxy.size.height)
+            }
+        )
+        .onPreferenceChange(ControlsPanelHeightPreferenceKey.self, perform: onChange)
     }
 }
 
@@ -217,16 +296,23 @@ struct PreviewView: View {
                 Segment(order: 1, startSeconds: 10, endSeconds: 25, segmentDescription: "朝の様子"),
                 Segment(order: 2, startSeconds: 25, endSeconds: 40, segmentDescription: "昼の活動")
             ]
-        )
+        ),
+        subtitles: [
+            Subtitle(startSeconds: 0, endSeconds: 3.5, text: "朝の散歩スタート"),
+            Subtitle(startSeconds: 12, endSeconds: 16, text: "カフェに到着")
+        ]
     )
     let viewModel = PreviewViewModel(
         project: project,
         exportVideoUseCase: ExportVideoUseCase(repository: container.projectRepository),
         fetchBGMTracksUseCase: FetchBGMTracksUseCase(repository: container.bgmRepository),
         saveSubtitleUseCase: SaveSubtitleUseCase(repository: container.projectRepository),
-        downloadBGMUseCase: DownloadBGMUseCase(repository: container.bgmRepository)
+        deleteSubtitleUseCase: DeleteSubtitleUseCase(repository: container.projectRepository),
+        saveBGMSettingsUseCase: SaveBGMSettingsUseCase(repository: container.projectRepository),
+        downloadBGMUseCase: DownloadBGMUseCase(repository: container.bgmRepository),
+        updateSubtitlePositionUseCase: UpdateSubtitlePositionUseCase(repository: container.projectRepository)
     )
-    PreviewView(viewModel: viewModel)
+    PreviewView(viewModel: viewModel, container: container)
 }
 
 #Preview("書き出し中") {
@@ -235,16 +321,21 @@ struct PreviewView: View {
 
 private struct ExportingPreviewWrapper: View {
     @State private var viewModel: PreviewViewModel
+    private let container: DIContainer
 
     init() {
         let container = DIContainer.preview
+        self.container = container
         let project = Project(name: "テストプロジェクト")
         let vm = PreviewViewModel(
             project: project,
             exportVideoUseCase: ExportVideoUseCase(repository: container.projectRepository),
             fetchBGMTracksUseCase: FetchBGMTracksUseCase(repository: container.bgmRepository),
             saveSubtitleUseCase: SaveSubtitleUseCase(repository: container.projectRepository),
-            downloadBGMUseCase: DownloadBGMUseCase(repository: container.bgmRepository)
+            deleteSubtitleUseCase: DeleteSubtitleUseCase(repository: container.projectRepository),
+            saveBGMSettingsUseCase: SaveBGMSettingsUseCase(repository: container.projectRepository),
+            downloadBGMUseCase: DownloadBGMUseCase(repository: container.bgmRepository),
+            updateSubtitlePositionUseCase: UpdateSubtitlePositionUseCase(repository: container.projectRepository)
         )
         vm.isExporting = true
         vm.exportProgress = 0.45
@@ -252,6 +343,6 @@ private struct ExportingPreviewWrapper: View {
     }
 
     var body: some View {
-        PreviewView(viewModel: viewModel)
+        PreviewView(viewModel: viewModel, container: container)
     }
 }

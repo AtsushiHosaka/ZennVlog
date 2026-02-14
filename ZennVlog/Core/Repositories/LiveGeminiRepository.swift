@@ -5,8 +5,8 @@ actor LiveGeminiRepository: GeminiRepositoryProtocol {
     // MARK: - Properties
 
     private let dataSource: any GeminiRESTDataSourceProtocol
+    private let videoAnalysisDataSource: any VideoAnalysisJobDataSourceProtocol
     private let textModel: String
-    private let videoModel: String
 
     // MARK: - Init
 
@@ -14,12 +14,14 @@ actor LiveGeminiRepository: GeminiRepositoryProtocol {
         dataSource: any GeminiRESTDataSourceProtocol = GeminiRESTDataSource(
             apiKey: SecretsManager.geminiAPIKey
         ),
+        videoAnalysisDataSource: (any VideoAnalysisJobDataSourceProtocol)? = nil,
         textModel: String = SecretsManager.geminiTextModel,
         videoModel: String = SecretsManager.geminiVideoModel
     ) {
         self.dataSource = dataSource
+        self.videoAnalysisDataSource = videoAnalysisDataSource ?? VideoAnalysisJobDataSource()
         self.textModel = textModel
-        self.videoModel = videoModel
+        _ = videoModel
     }
 
     // MARK: - GeminiRepositoryProtocol
@@ -88,42 +90,11 @@ actor LiveGeminiRepository: GeminiRepositoryProtocol {
 
     func analyzeVideo(url: URL) async throws -> VideoAnalysisResult {
         do {
-            let videoData = try Data(contentsOf: url)
             let mimeType = mimeType(for: url)
-
-            let systemInstruction = """
-            You analyze vlog videos.
-            Return ONLY JSON in this schema:
-            {
-              "segments": [
-                {
-                  "startSeconds": 0.0,
-                  "endSeconds": 5.0,
-                  "description": "string"
-                }
-              ]
-            }
-            """
-
-            let prompt = "Analyze this video and provide segment timestamps and descriptions for vlog editing."
-
-            let jsonText = try await dataSource.analyzeVideo(
-                model: videoModel,
-                systemInstruction: systemInstruction,
-                prompt: prompt,
-                videoData: videoData,
-                mimeType: mimeType
-            )
-
-            let payload = try decodeVideoAnalysis(from: jsonText)
-            return VideoAnalysisResult(
-                segments: payload.segments.map {
-                    AnalyzedSegment(
-                        startSeconds: $0.startSeconds,
-                        endSeconds: $0.endSeconds,
-                        description: $0.description
-                    )
-                }
+            return try await videoAnalysisDataSource.analyzeVideo(
+                url: url,
+                mimeType: mimeType,
+                projectId: nil
             )
         } catch let error as GeminiRepositoryError {
             throw error
@@ -147,19 +118,6 @@ actor LiveGeminiRepository: GeminiRepositoryProtocol {
         }
     }
 
-    private func decodeVideoAnalysis(from json: String) throws -> VideoAnalysisPayload {
-        do {
-            guard let data = json.data(using: .utf8) else {
-                throw NSError(domain: "LiveGeminiRepository", code: -1, userInfo: [
-                    NSLocalizedDescriptionKey: "Invalid UTF-8 JSON"
-                ])
-            }
-            return try JSONDecoder().decode(VideoAnalysisPayload.self, from: data)
-        } catch {
-            throw GeminiRepositoryError.responseParseFailed(underlying: error)
-        }
-    }
-
     private func mimeType(for url: URL) -> String {
         switch url.pathExtension.lowercased() {
         case "mov":
@@ -178,14 +136,4 @@ private struct ChatResponsePayload: Decodable {
     let text: String
     let suggestedTemplate: TemplateDTO?
     let suggestedBGM: BGMTrack?
-}
-
-private struct VideoAnalysisPayload: Decodable {
-    let segments: [VideoAnalysisSegmentPayload]
-}
-
-private struct VideoAnalysisSegmentPayload: Decodable {
-    let startSeconds: Double
-    let endSeconds: Double
-    let description: String
 }

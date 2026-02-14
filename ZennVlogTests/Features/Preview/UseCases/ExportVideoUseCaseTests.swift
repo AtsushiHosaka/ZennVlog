@@ -156,8 +156,8 @@ struct ExportVideoUseCaseTests {
                 VideoAsset(segmentOrder: 1, localFileURL: "mock://video2.mp4", duration: 5)
             ],
             subtitles: [
-                Subtitle(segmentOrder: 0, text: "オープニングです"),
-                Subtitle(segmentOrder: 1, text: "メインです")
+                Subtitle(startSeconds: 0, endSeconds: 5, text: "オープニングです"),
+                Subtitle(startSeconds: 5, endSeconds: 10, text: "メインです")
             ]
         )
         try await mockRepository.save(project)

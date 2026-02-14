@@ -23,7 +23,7 @@ final class SwiftDataProjectRepository: ProjectRepositoryProtocol {
             Subtitle.self,
             ChatMessage.self
         ])
-        let configuration = ModelConfiguration("ZennVlog")
+        let configuration = ModelConfiguration("ZennVlogPreviewV2")
 
         do {
             let container = try ModelContainer(

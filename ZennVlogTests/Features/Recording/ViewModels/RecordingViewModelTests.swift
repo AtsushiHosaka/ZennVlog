@@ -93,6 +93,8 @@ struct RecordingViewModelTests {
         #expect(viewModel.guideImage == nil)
         #expect(viewModel.showGuideImage == false)
         #expect(viewModel.showTrimEditor == false)
+        #expect(viewModel.isAnalyzingVideo == false)
+        #expect(viewModel.analysisProgress == 0)
     }
 
     @Test("テンプレートがないプロジェクトではsegmentsが空")
@@ -353,5 +355,20 @@ struct RecordingViewModelTests {
 
         // Then
         #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test("解析進捗通知の値を保持できる")
+    func 解析進捗通知の値を保持できる() {
+        // Given
+        let viewModel = createViewModel()
+        #expect(viewModel.analysisProgress == 0)
+
+        // When
+        viewModel.analysisProgress = 0.45
+        viewModel.isAnalyzingVideo = true
+
+        // Then
+        #expect(viewModel.analysisProgress == 0.45)
+        #expect(viewModel.isAnalyzingVideo == true)
     }
 }

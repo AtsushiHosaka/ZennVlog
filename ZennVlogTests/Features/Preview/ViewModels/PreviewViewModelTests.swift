@@ -1,291 +1,180 @@
-import AVFoundation
 import Foundation
 import Testing
 @testable import ZennVlog
+
+private final class PreviewMockVideoExporter: VideoExporterProtocol, @unchecked Sendable {
+    func export(
+        videoAssets _: [VideoAsset],
+        subtitles _: [Subtitle],
+        segments _: [Segment],
+        bgmURL _: URL?,
+        bgmVolume _: Float,
+        progressHandler: @escaping @Sendable (Double) -> Void
+    ) async throws -> URL {
+        progressHandler(0.5)
+        progressHandler(1.0)
+        return URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("preview_vm_mock.mp4")
+    }
+}
 
 @Suite("PreviewViewModel Tests")
 @MainActor
 struct PreviewViewModelTests {
 
-    // MARK: - ヘルパー
+    private func createViewModel(project: Project? = nil) -> PreviewViewModel {
+        let projectRepository = MockProjectRepository(emptyForTesting: true)
+        let bgmRepository = MockBGMRepository()
+        let exporter = PreviewMockVideoExporter()
 
-    private func createViewModel(
-        project: Project? = nil
-    ) -> PreviewViewModel {
-        let projectRepo = MockProjectRepository(emptyForTesting: true)
-        let bgmRepo = MockBGMRepository()
-
-        let viewModel = PreviewViewModel(
-            project: project ?? createTestProject(),
-            exportVideoUseCase: ExportVideoUseCase(repository: projectRepo),
-            fetchBGMTracksUseCase: FetchBGMTracksUseCase(repository: bgmRepo),
-            saveSubtitleUseCase: SaveSubtitleUseCase(repository: projectRepo),
-            downloadBGMUseCase: DownloadBGMUseCase(repository: bgmRepo)
+        return PreviewViewModel(
+            project: project ?? createProject(),
+            exportVideoUseCase: ExportVideoUseCase(
+                repository: projectRepository,
+                videoExporter: exporter
+            ),
+            fetchBGMTracksUseCase: FetchBGMTracksUseCase(repository: bgmRepository),
+            saveSubtitleUseCase: SaveSubtitleUseCase(repository: projectRepository),
+            deleteSubtitleUseCase: DeleteSubtitleUseCase(repository: projectRepository),
+            saveBGMSettingsUseCase: SaveBGMSettingsUseCase(repository: projectRepository),
+            downloadBGMUseCase: DownloadBGMUseCase(repository: bgmRepository),
+            updateSubtitlePositionUseCase: UpdateSubtitlePositionUseCase(repository: projectRepository)
         )
-
-        return viewModel
     }
 
-    private func createTestProject() -> Project {
+    private func createProject() -> Project {
         Project(
             name: "テスト用Vlog",
-            template: Template(segments: [
-                Segment(order: 0, startSeconds: 0, endSeconds: 10, segmentDescription: "オープニング"),
-                Segment(order: 1, startSeconds: 10, endSeconds: 25, segmentDescription: "メインシーン"),
-                Segment(order: 2, startSeconds: 25, endSeconds: 40, segmentDescription: "エンディング")
-            ]),
+            template: Template(
+                segments: [
+                    Segment(order: 0, startSeconds: 0, endSeconds: 10, segmentDescription: "オープニング"),
+                    Segment(order: 1, startSeconds: 10, endSeconds: 25, segmentDescription: "メイン"),
+                    Segment(order: 2, startSeconds: 25, endSeconds: 40, segmentDescription: "エンディング")
+                ]
+            ),
             videoAssets: [
-                VideoAsset(segmentOrder: 0, localFileURL: "mock://video1.mp4", duration: 10),
-                VideoAsset(segmentOrder: 1, localFileURL: "mock://video2.mp4", duration: 15),
-                VideoAsset(segmentOrder: 2, localFileURL: "mock://video3.mp4", duration: 15)
+                VideoAsset(segmentOrder: 0, localFileURL: "mock://v1.mp4", duration: 10),
+                VideoAsset(segmentOrder: 1, localFileURL: "mock://v2.mp4", duration: 15),
+                VideoAsset(segmentOrder: 2, localFileURL: "mock://v3.mp4", duration: 15)
             ],
+            subtitles: [
+                Subtitle(startSeconds: 0, endSeconds: 3, text: "start"),
+                Subtitle(startSeconds: 12, endSeconds: 16, text: "middle"),
+                Subtitle(startSeconds: 28, endSeconds: 31, text: "end")
+            ],
+            selectedBGMId: "bgm-001",
+            bgmVolume: 0.65,
             status: .editing
         )
     }
 
-    private func createProjectWithSubtitles() -> Project {
-        let project = createTestProject()
-        project.subtitles = [
-            Subtitle(segmentOrder: 0, text: "オープニングテロップ"),
-            Subtitle(segmentOrder: 1, text: "メインテロップ"),
-            Subtitle(segmentOrder: 2, text: "エンディングテロップ")
-        ]
-        return project
-    }
-
-    // MARK: - 初期状態のテスト
-
-    @Test("初期状態が正しく設定される")
-    func 初期状態が正しく設定される() {
-        // Given & When
+    @Test("loadProjectでBGMとdurationと音量を復元する")
+    func loadProjectRestoresState() async {
         let viewModel = createViewModel()
 
-        // Then
-        #expect(viewModel.isPlaying == false)
-        #expect(viewModel.currentTime == 0.0)
-        #expect(viewModel.duration == 0.0)
-        #expect(viewModel.currentSegmentIndex == 0)
-        #expect(viewModel.subtitleText.isEmpty)
-        #expect(viewModel.selectedBGM == nil)
-        #expect(viewModel.bgmVolume == 0.3)
-        #expect(viewModel.bgmTracks.isEmpty)
-        #expect(viewModel.showBGMSelector == false)
-        #expect(viewModel.isExporting == false)
-        #expect(viewModel.exportProgress == 0.0)
-        #expect(viewModel.errorMessage == nil)
-    }
-
-    @Test("segmentsがテンプレートから取得される")
-    func segmentsがテンプレートから取得される() {
-        // Given & When
-        let viewModel = createViewModel()
-
-        // Then
-        #expect(viewModel.segments.count == 3)
-    }
-
-    @Test("テンプレートなしの場合segmentsが空")
-    func テンプレートなしの場合segmentsが空() {
-        // Given
-        let project = Project(name: "テスト", status: .editing)
-
-        // When
-        let viewModel = createViewModel(project: project)
-
-        // Then
-        #expect(viewModel.segments.isEmpty)
-    }
-
-    // MARK: - loadProject テスト
-
-    @Test("loadProjectでBGMトラックが読み込まれる")
-    func loadProjectでBGMトラックが読み込まれる() async {
-        // Given
-        let viewModel = createViewModel()
-
-        // When
         await viewModel.loadProject()
 
-        // Then: MockBGMRepositoryは5曲返す
-        #expect(viewModel.bgmTracks.count == 5)
-    }
-
-    @Test("loadProjectでdurationが計算される")
-    func loadProjectでdurationが計算される() async {
-        // Given
-        let viewModel = createViewModel()
-
-        // When
-        await viewModel.loadProject()
-
-        // Then: セグメント合計 = (10-0) + (25-10) + (40-25) = 10 + 15 + 15 = 40
         #expect(viewModel.duration == 40.0)
+        #expect(viewModel.bgmTracks.count == 5)
+        #expect(viewModel.selectedBGM?.id == "bgm-001")
+        #expect(viewModel.bgmVolume == 0.65)
     }
 
-    @Test("loadProjectで既存テロップが復元される")
-    func loadProjectで既存テロップが復元される() async {
-        // Given
-        let project = createProjectWithSubtitles()
-        let viewModel = createViewModel(project: project)
-
-        // When
+    @Test("seekで現在時刻とセグメントが更新される")
+    func seekUpdatesCurrentSegment() async {
+        let viewModel = createViewModel()
         await viewModel.loadProject()
 
-        // Then: currentSegmentIndex == 0 なので、segment 0のテロップが復元される
-        #expect(viewModel.subtitleText == "オープニングテロップ")
-    }
+        viewModel.seek(to: 14)
 
-    // MARK: - 再生制御テスト
-
-    @Test("togglePlayPauseで再生状態が切り替わる")
-    func togglePlayPauseで再生状態が切り替わる() {
-        // Given
-        let viewModel = createViewModel()
-        #expect(viewModel.isPlaying == false)
-
-        // When
-        viewModel.togglePlayPause()
-
-        // Then
-        #expect(viewModel.isPlaying == true)
-
-        // When
-        viewModel.togglePlayPause()
-
-        // Then
-        #expect(viewModel.isPlaying == false)
-    }
-
-    @Test("seekToSegmentでcurrentTimeとcurrentSegmentIndexが更新される")
-    func seekToSegmentでcurrentTimeとcurrentSegmentIndexが更新される() {
-        // Given
-        let viewModel = createViewModel()
-
-        // When: セグメント1にシーク（startSeconds = 10）
-        viewModel.seekToSegment(1)
-
-        // Then
+        #expect(viewModel.currentTime == 14)
         #expect(viewModel.currentSegmentIndex == 1)
-        #expect(viewModel.currentTime == 10.0)
     }
 
-    @Test("範囲外のインデックスでは変更されない")
-    func 範囲外のインデックスでは変更されない() {
-        // Given
+    @Test("activeSubtitleが時刻一致するテロップを返す")
+    func activeSubtitleMatchesTime() async {
         let viewModel = createViewModel()
-        let originalIndex = viewModel.currentSegmentIndex
-        let originalTime = viewModel.currentTime
+        await viewModel.loadProject()
 
-        // When
-        viewModel.seekToSegment(99)
-
-        // Then
-        #expect(viewModel.currentSegmentIndex == originalIndex)
-        #expect(viewModel.currentTime == originalTime)
+        let subtitle = viewModel.activeSubtitle(at: 12.5)
+        #expect(subtitle?.text == "middle")
     }
 
-    @Test("seekToSegmentでテロップが復元される")
-    func seekToSegmentでテロップが復元される() {
-        // Given
-        let project = createProjectWithSubtitles()
-        let viewModel = createViewModel(project: project)
+    @Test("activeSubtitleが時間境界で正しく切り替わる")
+    func activeSubtitleBoundarySwitching() async {
+        let viewModel = createViewModel()
+        await viewModel.loadProject()
 
-        // When: セグメント1にシーク
-        viewModel.seekToSegment(1)
-
-        // Then
-        #expect(viewModel.subtitleText == "メインテロップ")
+        #expect(viewModel.activeSubtitle(at: 0.5)?.text == "start")
+        #expect(viewModel.activeSubtitle(at: 3.3) == nil)
+        #expect(viewModel.activeSubtitle(at: 13.5)?.text == "middle")
+        #expect(viewModel.activeSubtitle(at: 28.5)?.text == "end")
     }
 
-    // MARK: - テロップテスト
+    @Test("新規テロップSheetを開ける")
+    func openNewSubtitleSheet() async {
+        let viewModel = createViewModel()
+        await viewModel.loadProject()
+
+        viewModel.showNewSubtitleSheet(at: 5)
+
+        #expect(viewModel.subtitleSheetState != nil)
+        #expect(viewModel.subtitleSheetState?.startSeconds == 5)
+    }
 
     @Test("テロップを保存できる")
-    func テロップを保存できる() async {
-        // Given
+    func saveSubtitle() async {
         let viewModel = createViewModel()
-        viewModel.subtitleText = "テストテロップ"
-
-        // When
-        await viewModel.saveSubtitle()
-
-        // Then
-        #expect(viewModel.errorMessage == nil)
-        let subtitle = viewModel.project.subtitles.first { $0.segmentOrder == 0 }
-        #expect(subtitle?.text == "テストテロップ")
-    }
-
-    // MARK: - BGMテスト
-
-    @Test("BGMトラック一覧を取得できる")
-    func BGMトラック一覧を取得できる() async {
-        // Given
-        let viewModel = createViewModel()
-
-        // When
-        await viewModel.loadBGMTracks()
-
-        // Then
-        #expect(viewModel.bgmTracks.count == 5)
-        #expect(viewModel.errorMessage == nil)
-    }
-
-    @Test("BGMを選択するとselectedBGMが更新される")
-    func BGMを選択するとselectedBGMが更新される() async {
-        // Given
-        let viewModel = createViewModel()
-        await viewModel.loadBGMTracks()
-        let track = viewModel.bgmTracks.first!
-
-        // When
-        await viewModel.selectBGM(track)
-
-        // Then
-        #expect(viewModel.selectedBGM?.id == track.id)
-        #expect(viewModel.showBGMSelector == false)
-    }
-
-    @Test("既存のselectedBGMIdからBGMが復元される")
-    func 既存のselectedBGMIdからBGMが復元される() async {
-        // Given
-        let project = createTestProject()
-        project.selectedBGMId = "bgm-001"
-        let viewModel = createViewModel(project: project)
-
-        // When
         await viewModel.loadProject()
 
-        // Then
-        #expect(viewModel.selectedBGM?.id == "bgm-001")
+        let draft = SubtitleSheetState(
+            startSeconds: 20,
+            endSeconds: 22,
+            text: "new subtitle"
+        )
+        let success = await viewModel.saveSubtitle(draft)
+
+        #expect(success)
+        #expect(viewModel.project.subtitles.contains { $0.text == "new subtitle" })
     }
 
-    // MARK: - その他テスト
-
-    @Test("exportVideoでexportedVideoURLが設定される")
-    func exportVideoでexportedVideoURLが設定される() async {
-        // Given
+    @Test("重複テロップ保存時は失敗する")
+    func saveSubtitleRejectOverlap() async {
         let viewModel = createViewModel()
+        await viewModel.loadProject()
 
-        // When
-        await viewModel.exportVideo()
+        let draft = SubtitleSheetState(
+            startSeconds: 1,
+            endSeconds: 2,
+            text: "overlap"
+        )
+        let success = await viewModel.saveSubtitle(draft)
 
-        // Then
+        #expect(!success)
+        #expect(viewModel.errorMessage != nil)
+    }
+
+    @Test("BGM設定を保存できる")
+    func saveBGMSettings() async {
+        let viewModel = createViewModel()
+        await viewModel.loadProject()
+        let newTrack = viewModel.bgmTracks.first { $0.id == "bgm-002" }
+
+        let success = await viewModel.saveBGMSettings(track: newTrack, volume: 0.2)
+
+        #expect(success)
+        #expect(viewModel.selectedBGM?.id == "bgm-002")
+        #expect(viewModel.project.selectedBGMId == "bgm-002")
+        #expect(viewModel.project.bgmVolume == 0.2)
+    }
+
+    @Test("書き出し成功時にURLを返す")
+    func exportVideoReturnsURL() async {
+        let viewModel = createViewModel()
+        await viewModel.loadProject()
+
+        let url = await viewModel.exportVideo()
+
+        #expect(url != nil)
         #expect(viewModel.isExporting == false)
-        // exportVideoUseCase のMock実装がURLを返すので、URLが設定されるか、
-        // エラーが発生する（videoAssetsが空の場合）
-        // PreviewViewModelのプロジェクトにはvideoAssetsがあるので成功するはず
-        // ただしMockProjectRepositoryにsaveされていないため、エラーになる可能性あり
-        // ここではisExportingがfalseに戻ることを確認
-    }
-
-    @Test("clearErrorでerrorMessageがnilになる")
-    func clearErrorでerrorMessageがnilになる() {
-        // Given
-        let viewModel = createViewModel()
-
-        // When
-        viewModel.clearError()
-
-        // Then
-        #expect(viewModel.errorMessage == nil)
     }
 }

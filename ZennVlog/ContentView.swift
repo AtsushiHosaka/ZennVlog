@@ -32,6 +32,34 @@ struct ContentView: View {
     }
 
     var body: some View {
+        rootView
+    }
+
+    private func launchInitialChatIfNeeded() async {
+        guard launchesChatOnFirstOpen else { return }
+        guard !hasShownInitialChat else { return }
+
+        // Ensure Home tab is active before presenting the initial chat.
+        selectedTab = .home
+        await Task.yield()
+        homeViewModel.startNewProject()
+        hasShownInitialChat = true
+    }
+
+    @ViewBuilder
+    private var rootView: some View {
+        #if DEBUG
+        if PreviewFeatureDevelopment.isEnabled {
+            PreviewFeatureDevelopmentRootView()
+        } else {
+            mainTabView
+        }
+        #else
+        mainTabView
+        #endif
+    }
+
+    private var mainTabView: some View {
         TabView(selection: $selectedTab) {
             HomeView(viewModel: homeViewModel)
                 .tabItem {
@@ -49,17 +77,6 @@ struct ContentView: View {
             await launchInitialChatIfNeeded()
         }
     }
-
-    private func launchInitialChatIfNeeded() async {
-        guard launchesChatOnFirstOpen else { return }
-        guard !hasShownInitialChat else { return }
-
-        // Ensure Home tab is active before presenting the initial chat.
-        selectedTab = .home
-        await Task.yield()
-        homeViewModel.startNewProject()
-        hasShownInitialChat = true
-    }
 }
 
 #Preview {
@@ -70,3 +87,23 @@ private enum RootTab {
     case home
     case projects
 }
+
+#if DEBUG
+@MainActor
+private struct PreviewFeatureDevelopmentRootView: View {
+    @State private var previewViewModel: PreviewViewModel
+    private let container: DIContainer
+
+    init() {
+        let dependencies = PreviewFeatureDevelopment.makeDependencies()
+        container = dependencies.container
+        _previewViewModel = State(
+            wrappedValue: dependencies.viewModel
+        )
+    }
+
+    var body: some View {
+        PreviewView(viewModel: previewViewModel, container: container)
+    }
+}
+#endif

@@ -19,6 +19,8 @@ final class RecordingViewModel {
     var showTrimEditor: Bool = false
     var videoToTrim: URL?
     var videoScenes: [(timestamp: Double, description: String)] = []
+    var isAnalyzingVideo: Bool = false
+    var analysisProgress: Double = 0
 
     // MARK: - Computed Properties
 
@@ -142,6 +144,31 @@ final class RecordingViewModel {
     }
 
     func processSelectedVideo(url: URL) async {
+        isAnalyzingVideo = true
+        analysisProgress = 0
+
+        let progressObserver = NotificationCenter.default.addObserver(
+            forName: .videoAnalysisProgressDidUpdate,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            guard self.isAnalyzingVideo else { return }
+
+            let progress = notification.userInfo?[VideoAnalysisProgressUserInfoKey.progress] as? Double ?? 0
+            self.analysisProgress = min(max(progress, 0), 1)
+        }
+
+        defer {
+            NotificationCenter.default.removeObserver(progressObserver)
+            isAnalyzingVideo = false
+            if analysisProgress >= 1 {
+                analysisProgress = 1
+            } else {
+                analysisProgress = 0
+            }
+        }
+
         do {
             // 動画を分析
             let result = try await analyzeVideoUseCase.execute(videoURL: url)
@@ -154,6 +181,7 @@ final class RecordingViewModel {
             // トリムエディタを表示
             videoToTrim = url
             showTrimEditor = true
+            analysisProgress = 1
         } catch {
             errorMessage = "動画の分析に失敗しました"
         }

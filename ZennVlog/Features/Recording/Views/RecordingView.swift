@@ -111,13 +111,19 @@ struct RecordingView: View {
             }
             .navigationDestination(isPresented: $showPreview) {
                 let container = DIContainer.shared
-                PreviewView(viewModel: PreviewViewModel(
-                    project: viewModel.project,
-                    exportVideoUseCase: ExportVideoUseCase(repository: container.projectRepository),
-                    fetchBGMTracksUseCase: FetchBGMTracksUseCase(repository: container.bgmRepository),
-                    saveSubtitleUseCase: SaveSubtitleUseCase(repository: container.projectRepository),
-                    downloadBGMUseCase: DownloadBGMUseCase(repository: container.bgmRepository)
-                ))
+                PreviewView(
+                    viewModel: PreviewViewModel(
+                        project: viewModel.project,
+                        exportVideoUseCase: ExportVideoUseCase(repository: container.projectRepository),
+                        fetchBGMTracksUseCase: FetchBGMTracksUseCase(repository: container.bgmRepository),
+                        saveSubtitleUseCase: SaveSubtitleUseCase(repository: container.projectRepository),
+                        deleteSubtitleUseCase: DeleteSubtitleUseCase(repository: container.projectRepository),
+                        saveBGMSettingsUseCase: SaveBGMSettingsUseCase(repository: container.projectRepository),
+                        downloadBGMUseCase: DownloadBGMUseCase(repository: container.bgmRepository),
+                        updateSubtitlePositionUseCase: UpdateSubtitlePositionUseCase(repository: container.projectRepository)
+                    ),
+                    container: container
+                )
             }
         }
     }

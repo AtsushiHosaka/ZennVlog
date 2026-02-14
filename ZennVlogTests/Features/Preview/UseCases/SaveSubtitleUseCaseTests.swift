@@ -9,165 +9,137 @@ struct SaveSubtitleUseCaseTests {
     let mockRepository: MockProjectRepository
 
     init() async throws {
-        mockRepository = MockProjectRepository()
+        mockRepository = MockProjectRepository(emptyForTesting: true)
         useCase = SaveSubtitleUseCase(repository: mockRepository)
     }
 
-    @Test("新規テロップを保存できる")
+    @Test("新規テロップを時間範囲で保存できる")
     func saveNewSubtitle() async throws {
-        let project = Project(
-            name: "テスト用",
-            template: Template(segments: [
-                Segment(order: 0, startSeconds: 0, endSeconds: 5, segmentDescription: "テスト")
-            ])
-        )
-        try await mockRepository.save(project)
+        let project = makeProject()
 
         try await useCase.execute(
             project: project,
-            segmentOrder: 0,
+            subtitleId: nil,
+            startSeconds: 1,
+            endSeconds: 4,
             text: "こんにちは"
         )
 
-        let saved = try await mockRepository.fetch(by: project.id)
-        #expect(saved?.subtitles.count == 1)
-        #expect(saved?.subtitles.first?.text == "こんにちは")
+        #expect(project.subtitles.count == 1)
+        #expect(project.subtitles.first?.startSeconds == 1)
+        #expect(project.subtitles.first?.endSeconds == 4)
+        #expect(project.subtitles.first?.text == "こんにちは")
     }
 
-    @Test("保存後にProjectが更新される")
-    func projectUpdatedAfterSave() async throws {
-        let project = Project(
-            name: "テスト用",
-            template: Template(segments: [
-                Segment(order: 0, startSeconds: 0, endSeconds: 5, segmentDescription: "テスト")
-            ])
-        )
-        try await mockRepository.save(project)
-
-        #expect(project.subtitles.isEmpty)
-
-        try await useCase.execute(
-            project: project,
-            segmentOrder: 0,
-            text: "テストテロップ"
-        )
-
-        #expect(!project.subtitles.isEmpty)
-        #expect(project.subtitles.first?.segmentOrder == 0)
-    }
-
-    @Test("既存テロップを上書きできる")
+    @Test("既存テロップを更新できる")
     func updateExistingSubtitle() async throws {
-        let project = Project(
-            name: "テスト用",
-            template: Template(segments: [
-                Segment(order: 0, startSeconds: 0, endSeconds: 5, segmentDescription: "テスト")
-            ]),
-            subtitles: [
-                Subtitle(segmentOrder: 0, text: "古いテキスト")
-            ]
-        )
-        try await mockRepository.save(project)
+        let subtitle = Subtitle(startSeconds: 1, endSeconds: 3, text: "古いテキスト")
+        let project = makeProject(subtitles: [subtitle])
 
         try await useCase.execute(
             project: project,
-            segmentOrder: 0,
+            subtitleId: subtitle.id,
+            startSeconds: 2,
+            endSeconds: 5,
             text: "新しいテキスト"
         )
 
-        let saved = try await mockRepository.fetch(by: project.id)
-        #expect(saved?.subtitles.count == 1)
-        #expect(saved?.subtitles.first?.text == "新しいテキスト")
+        #expect(project.subtitles.count == 1)
+        #expect(project.subtitles.first?.id == subtitle.id)
+        #expect(project.subtitles.first?.startSeconds == 2)
+        #expect(project.subtitles.first?.endSeconds == 5)
+        #expect(project.subtitles.first?.text == "新しいテキスト")
     }
 
-    @Test("同じセグメントのテロップは1つのみ")
-    func onlyOneSubtitlePerSegment() async throws {
-        let project = Project(
-            name: "テスト用",
-            template: Template(segments: [
-                Segment(order: 0, startSeconds: 0, endSeconds: 5, segmentDescription: "テスト")
-            ])
-        )
-        try await mockRepository.save(project)
-
-        try await useCase.execute(
-            project: project,
-            segmentOrder: 0,
-            text: "最初のテキスト"
+    @Test("重複範囲は保存できない")
+    func rejectOverlap() async throws {
+        let project = makeProject(
+            subtitles: [
+                Subtitle(startSeconds: 2, endSeconds: 5, text: "既存テロップ")
+            ]
         )
 
-        try await useCase.execute(
-            project: project,
-            segmentOrder: 0,
-            text: "2番目のテキスト"
-        )
-
-        let saved = try await mockRepository.fetch(by: project.id)
-        let subtitlesForSegment0 = saved?.subtitles.filter { $0.segmentOrder == 0 }
-        #expect(subtitlesForSegment0?.count == 1)
-        #expect(subtitlesForSegment0?.first?.text == "2番目のテキスト")
+        do {
+            try await useCase.execute(
+                project: project,
+                subtitleId: nil,
+                startSeconds: 4,
+                endSeconds: 6,
+                text: "重複するテロップ"
+            )
+            #expect(Bool(false), "重複時はエラーになるべき")
+        } catch let error as SaveSubtitleError {
+            #expect(error == .overlap)
+        }
     }
 
-    @Test("空のテキストでも保存できる")
-    func saveEmptyText() async throws {
-        let project = Project(
-            name: "テスト用",
-            template: Template(segments: [
-                Segment(order: 0, startSeconds: 0, endSeconds: 5, segmentDescription: "テスト")
-            ])
-        )
-        try await mockRepository.save(project)
+    @Test("範囲が不正な場合は保存できない")
+    func rejectInvalidRange() async throws {
+        let project = makeProject()
 
-        try await useCase.execute(
-            project: project,
-            segmentOrder: 0,
-            text: ""
-        )
-
-        let saved = try await mockRepository.fetch(by: project.id)
-        #expect(saved?.subtitles.count == 1)
-        #expect(saved?.subtitles.first?.text == "")
+        do {
+            try await useCase.execute(
+                project: project,
+                subtitleId: nil,
+                startSeconds: 3,
+                endSeconds: 2,
+                text: "不正"
+            )
+            #expect(Bool(false), "end <= start はエラーになるべき")
+        } catch let error as SaveSubtitleError {
+            #expect(error == .invalidRange)
+        }
     }
 
-    @Test("複数セグメントに異なるテロップを保存")
-    func saveMultipleSubtitles() async throws {
-        let project = Project(
+    @Test("範囲外は保存できない")
+    func rejectOutOfBoundsRange() async throws {
+        let project = makeProject() // duration = 12
+
+        do {
+            try await useCase.execute(
+                project: project,
+                subtitleId: nil,
+                startSeconds: 11,
+                endSeconds: 13,
+                text: "範囲外"
+            )
+            #expect(Bool(false), "動画長を超える範囲はエラーになるべき")
+        } catch let error as SaveSubtitleError {
+            #expect(error == .rangeOutOfBounds)
+        }
+    }
+
+    @Test("空テキストは保存できない")
+    func rejectEmptyText() async throws {
+        let project = makeProject()
+
+        do {
+            try await useCase.execute(
+                project: project,
+                subtitleId: nil,
+                startSeconds: 1,
+                endSeconds: 2,
+                text: "   "
+            )
+            #expect(Bool(false), "空テキストはエラーになるべき")
+        } catch let error as SaveSubtitleError {
+            #expect(error == .emptyText)
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func makeProject(subtitles: [Subtitle] = []) -> Project {
+        Project(
             name: "テスト用",
-            template: Template(segments: [
-                Segment(order: 0, startSeconds: 0, endSeconds: 5, segmentDescription: "オープニング"),
-                Segment(order: 1, startSeconds: 5, endSeconds: 10, segmentDescription: "メイン"),
-                Segment(order: 2, startSeconds: 10, endSeconds: 15, segmentDescription: "エンディング")
-            ])
+            template: Template(
+                segments: [
+                    Segment(order: 0, startSeconds: 0, endSeconds: 4, segmentDescription: "A"),
+                    Segment(order: 1, startSeconds: 4, endSeconds: 8, segmentDescription: "B"),
+                    Segment(order: 2, startSeconds: 8, endSeconds: 12, segmentDescription: "C")
+                ]
+            ),
+            subtitles: subtitles
         )
-        try await mockRepository.save(project)
-
-        try await useCase.execute(
-            project: project,
-            segmentOrder: 0,
-            text: "オープニングテロップ"
-        )
-
-        try await useCase.execute(
-            project: project,
-            segmentOrder: 1,
-            text: "メインテロップ"
-        )
-
-        try await useCase.execute(
-            project: project,
-            segmentOrder: 2,
-            text: "エンディングテロップ"
-        )
-
-        let saved = try await mockRepository.fetch(by: project.id)
-        #expect(saved?.subtitles.count == 3)
-
-        let subtitle0 = saved?.subtitles.first { $0.segmentOrder == 0 }
-        let subtitle1 = saved?.subtitles.first { $0.segmentOrder == 1 }
-        let subtitle2 = saved?.subtitles.first { $0.segmentOrder == 2 }
-
-        #expect(subtitle0?.text == "オープニングテロップ")
-        #expect(subtitle1?.text == "メインテロップ")
-        #expect(subtitle2?.text == "エンディングテロップ")
     }
 }

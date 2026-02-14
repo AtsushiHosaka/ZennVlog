@@ -19,6 +19,7 @@ final class Project {
     @Relationship(deleteRule: .cascade) var subtitles: [Subtitle]
     @Relationship(deleteRule: .cascade) var chatHistory: [ChatMessage]
     var selectedBGMId: String?
+    var bgmVolume: Float
     var status: ProjectStatus
     var createdAt: Date
     var updatedAt: Date
@@ -33,6 +34,7 @@ final class Project {
         subtitles: [Subtitle] = [],
         chatHistory: [ChatMessage] = [],
         selectedBGMId: String? = nil,
+        bgmVolume: Float = 0.3,
         status: ProjectStatus = .chatting,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -46,6 +48,7 @@ final class Project {
         self.subtitles = subtitles
         self.chatHistory = chatHistory
         self.selectedBGMId = selectedBGMId
+        self.bgmVolume = bgmVolume
         self.status = status
         self.createdAt = createdAt
         self.updatedAt = updatedAt

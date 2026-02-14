@@ -28,6 +28,28 @@ private actor GeminiDataSourceStub: GeminiRESTDataSourceProtocol {
     }
 }
 
+private actor VideoAnalysisJobDataSourceStub: VideoAnalysisJobDataSourceProtocol {
+    var response = VideoAnalysisResult(segments: [])
+    var thrownError: Error?
+    var receivedMimeType: String?
+
+    func setResponse(_ value: VideoAnalysisResult) {
+        response = value
+    }
+
+    func setError(_ value: Error?) {
+        thrownError = value
+    }
+
+    func analyzeVideo(url: URL, mimeType: String, projectId: String?) async throws -> VideoAnalysisResult {
+        receivedMimeType = mimeType
+        if let thrownError {
+            throw thrownError
+        }
+        return response
+    }
+}
+
 @Suite("LiveGeminiRepository Tests")
 struct LiveGeminiRepositoryTests {
 
@@ -46,6 +68,7 @@ struct LiveGeminiRepositoryTests {
 
         let repository = LiveGeminiRepository(
             dataSource: stub,
+            videoAnalysisDataSource: VideoAnalysisJobDataSourceStub(),
             textModel: "model-text",
             videoModel: "model-video"
         )
@@ -64,6 +87,7 @@ struct LiveGeminiRepositoryTests {
 
         let repository = LiveGeminiRepository(
             dataSource: stub,
+            videoAnalysisDataSource: VideoAnalysisJobDataSourceStub(),
             textModel: "model-text",
             videoModel: "model-video"
         )
@@ -83,32 +107,57 @@ struct LiveGeminiRepositoryTests {
 
     @Test("analyzeVideo decodes segments")
     func analyzeVideoDecodesSegments() async throws {
-        let stub = GeminiDataSourceStub()
-        await stub.setVideoResponse(
-            """
-            {
-              "segments": [
-                { "startSeconds": 0.0, "endSeconds": 3.0, "description": "intro" },
-                { "startSeconds": 3.0, "endSeconds": 6.0, "description": "main" }
-              ]
-            }
-            """
+        let geminiStub = GeminiDataSourceStub()
+        let jobStub = VideoAnalysisJobDataSourceStub()
+        await jobStub.setResponse(
+            VideoAnalysisResult(
+                segments: [
+                    AnalyzedSegment(startSeconds: 0, endSeconds: 3, description: "intro"),
+                    AnalyzedSegment(startSeconds: 3, endSeconds: 6, description: "main", confidence: 0.84)
+                ]
+            )
         )
 
         let repository = LiveGeminiRepository(
-            dataSource: stub,
+            dataSource: geminiStub,
+            videoAnalysisDataSource: jobStub,
             textModel: "model-text",
             videoModel: "model-video"
         )
 
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("gemini-test.mp4")
-        try Data([0, 1, 2, 3]).write(to: tempURL)
+        let tempURL = URL(fileURLWithPath: "/tmp/gemini-test.mp4")
 
         let result = try await repository.analyzeVideo(url: tempURL)
 
         #expect(result.segments.count == 2)
         #expect(result.segments[0].description == "intro")
+        #expect(result.segments[1].confidence == 0.84)
+        #expect(await jobStub.receivedMimeType == "video/mp4")
+    }
 
-        try? FileManager.default.removeItem(at: tempURL)
+    @Test("analyzeVideo maps unknown errors to videoAnalysisFailed")
+    func analyzeVideoMapsUnknownErrors() async throws {
+        let geminiStub = GeminiDataSourceStub()
+        let jobStub = VideoAnalysisJobDataSourceStub()
+        await jobStub.setError(NSError(domain: "test", code: 42))
+
+        let repository = LiveGeminiRepository(
+            dataSource: geminiStub,
+            videoAnalysisDataSource: jobStub,
+            textModel: "model-text",
+            videoModel: "model-video"
+        )
+
+        do {
+            _ = try await repository.analyzeVideo(url: URL(fileURLWithPath: "/tmp/any.mov"))
+            #expect(Bool(false), "videoAnalysisFailed should be thrown")
+        } catch let error as GeminiRepositoryError {
+            switch error {
+            case .videoAnalysisFailed:
+                #expect(Bool(true))
+            default:
+                #expect(Bool(false), "unexpected error type")
+            }
+        }
     }
 }
