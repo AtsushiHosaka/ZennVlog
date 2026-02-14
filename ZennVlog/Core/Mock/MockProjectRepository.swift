@@ -83,9 +83,6 @@ final class MockProjectRepository: ProjectRepositoryProtocol {
             projectDescription: "週末に友達と出かけた様子を記録",
             template: template,
             videoAssets: [
-                VideoAsset(segmentOrder: 0, localFileURL: "mock://video1.mp4", duration: 5),
-                VideoAsset(segmentOrder: 1, localFileURL: "mock://video2.mp4", duration: 10),
-                VideoAsset(segmentOrder: 2, localFileURL: "mock://video3.mp4", duration: 15)
             ],
             status: .recording
         )

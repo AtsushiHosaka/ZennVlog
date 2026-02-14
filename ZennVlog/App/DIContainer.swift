@@ -5,7 +5,7 @@ final class DIContainer {
 
     // MARK: - Singleton
 
-    static let shared = DIContainer()
+    static let shared = DIContainer(useMock: true)
 
     // MARK: - Properties
 
