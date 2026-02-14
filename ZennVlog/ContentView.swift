@@ -49,7 +49,7 @@ struct ContentView: View {
     @ViewBuilder
     private var rootView: some View {
         #if DEBUG
-        if PreviewFeatureDevelopment.isEnabled {
+        if PreviewFeatureDevelopment.launchMode == .preview {
             PreviewFeatureDevelopmentRootView()
         } else {
             mainTabView
@@ -87,23 +87,3 @@ private enum RootTab {
     case home
     case projects
 }
-
-#if DEBUG
-@MainActor
-private struct PreviewFeatureDevelopmentRootView: View {
-    @State private var previewViewModel: PreviewViewModel
-    private let container: DIContainer
-
-    init() {
-        let dependencies = PreviewFeatureDevelopment.makeDependencies()
-        container = dependencies.container
-        _previewViewModel = State(
-            wrappedValue: dependencies.viewModel
-        )
-    }
-
-    var body: some View {
-        PreviewView(viewModel: previewViewModel, container: container)
-    }
-}
-#endif

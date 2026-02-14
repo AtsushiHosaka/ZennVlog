@@ -1,9 +1,10 @@
 #if DEBUG
 import Foundation
+import SwiftUI
 
 enum PreviewFeatureDevelopment {
-    static var isEnabled: Bool {
-        ProcessInfo.processInfo.environment["DEV_PREVIEW_FEATURE"] != "false"
+    static var launchMode: LaunchMode {
+        LaunchMode.resolve(from: ProcessInfo.processInfo.environment)
     }
 
     @MainActor
@@ -96,6 +97,41 @@ enum PreviewFeatureDevelopment {
             updatedAt: Date().addingTimeInterval(-600)
         )
     }
+
+    enum LaunchMode: String {
+        case app
+        case preview
+
+        static func resolve(from environment: [String: String]) -> LaunchMode {
+            if let explicitMode = environment["DEV_LAUNCH_MODE"]?.lowercased() {
+                switch explicitMode {
+                case "preview", "previewview", "dev-preview":
+                    return .preview
+                case "app", "normal", "main":
+                    return .app
+                default:
+                    break
+                }
+            }
+
+            // Backward compatibility:
+            // DEV_PREVIEW_FEATURE=true  -> preview
+            // DEV_PREVIEW_FEATURE=false -> app
+            if let legacyFlag = environment["DEV_PREVIEW_FEATURE"]?.lowercased() {
+                switch legacyFlag {
+                case "1", "true", "yes", "on":
+                    return .preview
+                case "0", "false", "no", "off":
+                    return .app
+                default:
+                    break
+                }
+            }
+
+            // Default is normal app launch.
+            return .app
+        }
+    }
 }
 
 @MainActor
@@ -137,6 +173,24 @@ private actor PreviewFeatureMockTemplateRepository: TemplateRepositoryProtocol {
 
     func fetch(by id: String) async throws -> TemplateDTO? {
         templates.first { $0.id == id }
+    }
+}
+
+@MainActor
+struct PreviewFeatureDevelopmentRootView: View {
+    @State private var previewViewModel: PreviewViewModel
+    private let container: DIContainer
+
+    init() {
+        let dependencies = PreviewFeatureDevelopment.makeDependencies()
+        container = dependencies.container
+        _previewViewModel = State(
+            wrappedValue: dependencies.viewModel
+        )
+    }
+
+    var body: some View {
+        PreviewView(viewModel: previewViewModel, container: container)
     }
 }
 #endif
