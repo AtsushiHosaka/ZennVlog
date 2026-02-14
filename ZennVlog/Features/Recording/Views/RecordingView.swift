@@ -7,165 +7,222 @@ struct RecordingView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var stockAssetToAssign: VideoAsset?
     @State private var showPreview = false
-
+    @State private var recordingTimer: Timer?
+    @State private var remainingSeconds: Double = 0
+    
+//    @StateObject private var recorder = CameraRecorderService()
+    @StateObject private var cameraService = CameraService()
+    @Environment(\.scenePhase) private var scenePhase
+    
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                // タイムライン
-                TimelineView(
-                    segments: viewModel.segments,
-                    videoAssets: viewModel.videoAssets,
-                    currentSegmentIndex: viewModel.currentSegmentIndex,
-                    totalWidth: 300,
-                    onSegmentTap: { order in
-                        if let index = viewModel.segments.firstIndex(where: { $0.order == order }) {
-                            viewModel.selectSegment(at: index)
-                        }
-                    },
-                    onSegmentDelete: { order in
-                        Task {
-                            await viewModel.deleteVideoAsset(for: order)
-                        }
-                    }
-                )
-
-                // カメラプレビュー
-                CameraPreviewPlaceholder(
-                    segmentDescription: viewModel.currentSegment?.segmentDescription,
-                    guideImage: viewModel.guideImage,
-                    showGuideImage: viewModel.showGuideImage,
-                    isLoadingGuideImage: viewModel.isLoadingGuideImage
-                )
-                .aspectRatio(16/9, contentMode: .fit)
-
-                // ストック動画エリア
-                if !viewModel.stockVideoAssets.isEmpty {
-                    StockVideoArea(
-                        stockAssets: viewModel.stockVideoAssets,
-                        onAssetTap: { asset in
-                            stockAssetToAssign = asset
-                        },
-                        onAssetDelete: { asset in
-                            Task {
-                                await viewModel.deleteStockAsset(asset)
-                            }
-                        }
+        contentView
+        .navigationTitle(viewModel.project.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("編集") {
+                    showPreview = true
+                }
+                .disabled(!viewModel.canProceedToPreview)
+            }
+        }
+        .alert("エラー", isPresented: errorAlertBinding) {
+            Button("OK") {
+                viewModel.clearError()
+            }
+        } message: {
+            if let errorMessage = viewModel.errorMessage {
+                Text(errorMessage)
+            }
+        }
+        .confirmationDialog(
+            "セグメントに割り当て",
+            isPresented: .init(
+                get: { stockAssetToAssign != nil },
+                set: { if !$0 { stockAssetToAssign = nil } }
+            ),
+            titleVisibility: .visible,
+            actions: {
+                assignmentDialogActions
+            }
+        )
+        .navigationDestination(isPresented: $showPreview) {
+            previewDestination
+        }
+        .onAppear {
+            if scenePhase == .active {
+                cameraService.startIfNeeded()
+            }
+            cameraService.onRecordingFinished = { url, duration in
+                Task {
+                    await viewModel.saveRecordedVideo(
+                        localFileURL: url.path,
+                        duration: duration
                     )
                 }
-
-                Spacer()
-
-                // コントロールエリア
-                controlSection
             }
-            .navigationTitle(viewModel.project.name)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "chevron.left")
-                    }
+        }
+        .onChange(of: scenePhase) { phase in
+            switch phase {
+            case .active:
+                cameraService.startIfNeeded()
+            case .background:
+                // ✅録画中は stopSession しない（finish が飛ばなくなる典型原因）
+                if !cameraService.isRecording {
+                    cameraService.stopSession()
+                } else {
+                    cameraService.stopRecording()
                 }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("編集") {
-                        showPreview = true
-                    }
-                    .disabled(!viewModel.canProceedToPreview)
-                }
-            }
-            .alert("エラー", isPresented: .constant(viewModel.errorMessage != nil)) {
-                Button("OK") {
-                    viewModel.clearError()
-                }
-            } message: {
-                if let errorMessage = viewModel.errorMessage {
-                    Text(errorMessage)
-                }
-            }
-            .confirmationDialog(
-                "セグメントに割り当て",
-                isPresented: .init(
-                    get: { stockAssetToAssign != nil },
-                    set: { if !$0 { stockAssetToAssign = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                ForEach(viewModel.segments.filter { segment in
-                    !viewModel.isSegmentRecorded(segment.order)
-                }, id: \.id) { segment in
-                    Button("セグメント\(segment.order + 1): \(segment.segmentDescription)") {
-                        if let asset = stockAssetToAssign {
-                            Task {
-                                await viewModel.assignStockToSegment(asset, segmentOrder: segment.order)
-                            }
-                        }
-                        stockAssetToAssign = nil
-                    }
-                }
-                Button("キャンセル", role: .cancel) {
-                    stockAssetToAssign = nil
-                }
-            }
-            .navigationDestination(isPresented: $showPreview) {
-                let container = DIContainer.shared
-                PreviewView(
-                    viewModel: PreviewViewModel(
-                        project: viewModel.project,
-                        exportVideoUseCase: ExportVideoUseCase(repository: container.projectRepository),
-                        fetchBGMTracksUseCase: FetchBGMTracksUseCase(repository: container.bgmRepository),
-                        saveSubtitleUseCase: SaveSubtitleUseCase(repository: container.projectRepository),
-                        deleteSubtitleUseCase: DeleteSubtitleUseCase(repository: container.projectRepository),
-                        saveBGMSettingsUseCase: SaveBGMSettingsUseCase(repository: container.projectRepository),
-                        downloadBGMUseCase: DownloadBGMUseCase(repository: container.bgmRepository),
-                        updateSubtitlePositionUseCase: UpdateSubtitlePositionUseCase(repository: container.projectRepository)
-                    ),
-                    container: container
-                )
+            case .inactive:
+                break
+            @unknown default:
+                break
             }
         }
     }
 
-    // MARK: - Sections
+    private var contentView: some View {
+        ZStack {
+            cameraSection
+                .aspectRatio(9 / 16, contentMode: .fit)
 
+            VStack(spacing: 0) {
+                timeLineSection
+                Spacer()
+                controlSection
+            }
+            .opacity(0.8)
+
+            if !viewModel.stockVideoAssets.isEmpty {
+                StockVideoArea(
+                    stockAssets: viewModel.stockVideoAssets,
+                    onAssetTap: { asset in
+                        stockAssetToAssign = asset
+                    },
+                    onAssetDelete: { asset in
+                        Task {
+                            await viewModel.deleteStockAsset(asset)
+                        }
+                    }
+                )
+            }
+
+            Spacer()
+        }
+    }
+
+    private var previewDestination: some View {
+        let container = DIContainer.shared
+        return PreviewView(
+            viewModel: makePreviewViewModel(container: container),
+            container: container
+        )
+    }
+
+    private func makePreviewViewModel(container: DIContainer) -> PreviewViewModel {
+        PreviewViewModel(
+            project: viewModel.project,
+            exportVideoUseCase: ExportVideoUseCase(repository: container.projectRepository),
+            fetchBGMTracksUseCase: FetchBGMTracksUseCase(repository: container.bgmRepository),
+            saveSubtitleUseCase: SaveSubtitleUseCase(repository: container.projectRepository),
+            deleteSubtitleUseCase: DeleteSubtitleUseCase(repository: container.projectRepository),
+            saveBGMSettingsUseCase: SaveBGMSettingsUseCase(repository: container.projectRepository),
+            downloadBGMUseCase: DownloadBGMUseCase(repository: container.bgmRepository),
+            updateSubtitlePositionUseCase: UpdateSubtitlePositionUseCase(repository: container.projectRepository)
+        )
+    }
+
+    private var errorAlertBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { _ in
+                if viewModel.errorMessage != nil {
+                    viewModel.clearError()
+                }
+            }
+        )
+    }
+
+    private var assignableSegments: [Segment] {
+        viewModel.segments.filter { segment in
+            !viewModel.isSegmentRecorded(segment.order)
+        }
+    }
+
+    @ViewBuilder
+    private var assignmentDialogActions: some View {
+        ForEach(assignableSegments, id: \.id) { segment in
+            Button("セグメント\(segment.order + 1): \(segment.segmentDescription)") {
+                if let asset = stockAssetToAssign {
+                    Task {
+                        await viewModel.assignStockToSegment(asset, segmentOrder: segment.order)
+                    }
+                }
+                stockAssetToAssign = nil
+            }
+        }
+
+        Button("キャンセル", role: .cancel) {
+            stockAssetToAssign = nil
+        }
+    }
+    
+    private var cameraSection: some View {
+        CameraPreview(
+            cameraService: cameraService,
+            segmentDescription: viewModel.currentSegment?.segmentDescription,
+            guideImage: viewModel.guideImage,
+            showGuideImage: viewModel.showGuideImage,
+            isLoadingGuideImage: viewModel.isLoadingGuideImage
+        )
+    }
+    
+    private var timeLineSection: some View {
+        TimelineView(
+            segments: viewModel.segments,
+            videoAssets: viewModel.videoAssets,
+            currentSegmentIndex: viewModel.currentSegmentIndex,
+            totalWidth: 300,
+            onSegmentTap: { order in
+                if let index = viewModel.segments.firstIndex(where: { $0.order == order }) {
+                    viewModel.selectSegment(at: index)
+                }
+            },
+            onSegmentDelete: { order in
+                Task {
+                    await viewModel.deleteVideoAsset(for: order)
+                }
+            }
+        )
+    }
+    
+    // MARK: - Sections
+    
     private var controlSection: some View {
         VStack(spacing: 16) {
             // ガイド表示トグル
             HStack {
-                Button {
-                    viewModel.toggleGuideImage()
-                } label: {
-                    HStack {
-                        Image(systemName: viewModel.showGuideImage ? "eye.fill" : "eye.slash.fill")
-                        Text("ガイド")
-                    }
-                    .font(.subheadline)
-                }
-                .buttonStyle(.bordered)
-
+                
                 Spacer()
-
+                
                 // 撮影時間表示
-                if viewModel.isRecording {
-                    Text(formatTime(viewModel.recordingDuration))
-                        .font(.headline)
-                        .monospacedDigit()
-                        .foregroundColor(.red)
-                }
+                Text(formatTime(max(0, remainingSeconds)))
+                    .font(.headline)
+                    .monospacedDigit()
+                    .foregroundColor(.red)
+                
             }
-
+            
             // 撮影ボタン
             RecordButtonWithProgress(
                 isRecording: viewModel.isRecording,
                 progress: recordingProgress,
-                canRecord: canRecord,
+                canRecord: canRecord && !cameraService.isStartingRecording,
                 onTap: {
-                    if viewModel.isRecording {
-                        viewModel.stopRecording()
+                    if cameraService.isRecording {
+                        stopRecordingFlow()
                     } else {
-                        viewModel.startRecording()
+                        startRecordingFlow()
                     }
                 }
             )
@@ -173,21 +230,77 @@ struct RecordingView: View {
         .padding()
         .background(Color(UIColor.systemBackground))
     }
+    
+    private var currentSegmentDuration: Double {
+        guard let seg = viewModel.currentSegment else { return 0 }
+        let d = seg.endSeconds - seg.startSeconds
+        return max(0, d)
+    }
+    
+    private func startRecordingFlow() {
+        guard canRecord else { return }
+        
+        // 初期化
+        remainingSeconds = currentSegmentDuration
+        
+        // 既存タイマー停止
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        
+        // 録画開始
+        viewModel.startRecording()
+        cameraService.startRecording()
+        
+        // Timer開始（0.1秒刻み）
+        let t = Timer(timeInterval: 0.1, repeats: true) { _ in
+            // 既に止まってるなら何もしない
+            guard cameraService.isRecording else { return }
+            
+            remainingSeconds = max(0, remainingSeconds - 0.1)
+            
+            // 進捗用（必要なら）
+            viewModel.recordingDuration = currentSegmentDuration - remainingSeconds
+            
+            if remainingSeconds <= 0 {
+                stopRecordingFlow() // 自動停止
+            }
+        }
+        
+        recordingTimer = t
+        RunLoop.main.add(t, forMode: .common)
+    }
+    
+    private func stopRecordingFlow() {
+        // Timer停止が先（stop連打対策）
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        
+        // 既に止まっててもOKなように
+        if cameraService.isRecording {
+            cameraService.stopRecording()
+        }
+        if viewModel.isRecording {
+            viewModel.stopRecording()
+        }
+    }
 
+    
     // MARK: - Helpers
-
+    
     private var canRecord: Bool {
         guard let currentSegment = viewModel.currentSegment else { return false }
         return viewModel.canRecord(for: currentSegment.order)
+        //        && cameraService.permissionState == .authorized
+        //        && cameraService.isReady
     }
-
+    
     private var recordingProgress: Double {
         guard let currentSegment = viewModel.currentSegment else { return 0 }
         let segmentDuration = currentSegment.endSeconds - currentSegment.startSeconds
         guard segmentDuration > 0 else { return 0 }
         return viewModel.recordingDuration / segmentDuration
     }
-
+    
     private func formatTime(_ seconds: Double) -> String {
         let mins = Int(seconds) / 60
         let secs = Int(seconds) % 60
@@ -221,7 +334,8 @@ struct RecordingView: View {
         generateGuideImageUseCase: GenerateGuideImageUseCase(repository: container.imagenRepository),
         analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
         trimVideoUseCase: TrimVideoUseCase(),
-        deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository)
+        deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository),
+        photoLibraryService: container.photoLibraryService
     )
     RecordingView(viewModel: viewModel)
 }
@@ -232,7 +346,7 @@ struct RecordingView: View {
 
 private struct RecordingPreviewWrapper: View {
     @State private var viewModel: RecordingViewModel
-
+    
     init() {
         let container = DIContainer.preview
         let project = Project(
@@ -249,13 +363,14 @@ private struct RecordingPreviewWrapper: View {
             generateGuideImageUseCase: GenerateGuideImageUseCase(repository: container.imagenRepository),
             analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
             trimVideoUseCase: TrimVideoUseCase(),
-            deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository)
+            deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository),
+            photoLibraryService: container.photoLibraryService
         )
         vm.isRecording = true
         vm.recordingDuration = 5.5
         _viewModel = State(wrappedValue: vm)
     }
-
+    
     var body: some View {
         RecordingView(viewModel: viewModel)
     }
@@ -284,7 +399,8 @@ private struct RecordingPreviewWrapper: View {
         generateGuideImageUseCase: GenerateGuideImageUseCase(repository: container.imagenRepository),
         analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
         trimVideoUseCase: TrimVideoUseCase(),
-        deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository)
+        deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository),
+        photoLibraryService: container.photoLibraryService
     )
     RecordingView(viewModel: viewModel)
 }

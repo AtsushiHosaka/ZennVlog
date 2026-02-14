@@ -10,4 +10,5 @@ protocol PhotoLibraryServiceProtocol: Sendable {
     /// - Parameter url: 保存する動画ファイルのURL
     /// - Throws: 保存に失敗した場合のエラー
     func saveVideo(at url: URL) async throws
+    func saveVideoToAlbum(videoURL: URL, projectName: String) async throws -> String
 }

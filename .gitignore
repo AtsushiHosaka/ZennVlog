@@ -25,3 +25,4 @@ ZennVlog/GoogleService-Info.plist
 
 # AppCode
 .idea/
+/scripts

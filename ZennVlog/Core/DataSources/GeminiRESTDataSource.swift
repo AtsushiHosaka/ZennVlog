@@ -24,6 +24,13 @@ protocol GeminiRESTDataSourceProtocol: Sendable {
         model: String,
         prompt: String
     ) async throws -> Data
+
+    func generateContentWithTools(
+        model: String,
+        systemInstruction: String,
+        contents: [[String: Any]],
+        tools: [[String: Any]]
+    ) async throws -> GeminiTurnResponse
 }
 
 actor GeminiRESTDataSource: GeminiRESTDataSourceProtocol {
@@ -105,6 +112,91 @@ actor GeminiRESTDataSource: GeminiRESTDataSourceProtocol {
         )
 
         return try await generateText(model: model, payload: payload)
+    }
+
+    func generateContentWithTools(
+        model: String,
+        systemInstruction: String,
+        contents: [[String: Any]],
+        tools: [[String: Any]]
+    ) async throws -> GeminiTurnResponse {
+        let requestURL = try makeURL(for: model)
+
+        var payload: [String: Any] = [
+            "system_instruction": [
+                "parts": [["text": systemInstruction]]
+            ],
+            "contents": contents
+        ]
+
+        if !tools.isEmpty {
+            payload["tools"] = [["function_declarations": tools]]
+        } else {
+            // responseMimeType は Function Calling と併用不可
+            payload["generationConfig"] = [
+                "responseMimeType": "application/json"
+            ]
+        }
+
+        let body = try JSONSerialization.data(withJSONObject: payload)
+
+        #if DEBUG
+        if let jsonString = String(data: body, encoding: .utf8) {
+            print("[Gemini Request] \(jsonString.prefix(2000))")
+        }
+        #endif
+
+        let response: HTTPResponse
+        do {
+            response = try await httpClient.post(
+                url: requestURL,
+                body: body,
+                headers: ["Content-Type": "application/json"]
+            )
+        } catch let error as HTTPClientError {
+            if case .unexpectedStatusCode(let code, let data) = error {
+                let errorBody = String(data: data, encoding: .utf8) ?? "N/A"
+                print("[Gemini Error] status=\(code) body=\(errorBody)")
+            }
+            throw error
+        }
+
+        // Parse as raw JSON to preserve thought_signature and other fields
+        guard let rawJSON = try JSONSerialization.jsonObject(with: response.data) as? [String: Any],
+              let candidates = rawJSON["candidates"] as? [[String: Any]],
+              let content = candidates.first?["content"] as? [String: Any],
+              let parts = content["parts"] as? [[String: Any]] else {
+            throw GeminiRepositoryError.responseParseFailed(
+                underlying: NSError(domain: "GeminiRESTDataSource", code: -1, userInfo: [
+                    NSLocalizedDescriptionKey: "No parts in response"
+                ])
+            )
+        }
+
+        // Check for function call first (preserve raw part including thought_signature)
+        if let fcPart = parts.first(where: { $0["functionCall"] != nil }),
+           let fc = fcPart["functionCall"] as? [String: Any],
+           let name = fc["name"] as? String {
+            var args: [String: String] = [:]
+            if let rawArgs = fc["args"] as? [String: Any] {
+                for (key, value) in rawArgs {
+                    args[key] = "\(value)"
+                }
+            }
+            return .functionCall(name: name, args: args, rawPart: fcPart)
+        }
+
+        // Otherwise return text
+        if let textPart = parts.first(where: { $0["text"] != nil }),
+           let text = textPart["text"] as? String {
+            return .text(text)
+        }
+
+        throw GeminiRepositoryError.responseParseFailed(
+            underlying: NSError(domain: "GeminiRESTDataSource", code: -1, userInfo: [
+                NSLocalizedDescriptionKey: "No text or function call in response"
+            ])
+        )
     }
 
     func generateImage(model: String, prompt: String) async throws -> Data {
@@ -276,10 +368,37 @@ private struct GeminiResponseContent: Decodable {
 private struct GeminiResponsePart: Decodable {
     let text: String?
     let inlineData: GeminiResponseInlineData?
+    let functionCall: GeminiFunctionCallResponse?
 
     enum CodingKeys: String, CodingKey {
         case text
         case inlineData
+        case functionCall
+    }
+}
+
+private struct GeminiFunctionCallResponse: Decodable {
+    let name: String
+    let args: [String: AnyCodable]?
+}
+
+/// Utility to decode arbitrary JSON values from function call args
+private struct AnyCodable: Decodable {
+    let value: Any
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let str = try? container.decode(String.self) {
+            value = str
+        } else if let int = try? container.decode(Int.self) {
+            value = int
+        } else if let double = try? container.decode(Double.self) {
+            value = double
+        } else if let bool = try? container.decode(Bool.self) {
+            value = bool
+        } else {
+            value = ""
+        }
     }
 }
 

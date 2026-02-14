@@ -14,15 +14,22 @@ final class HomeViewModel {
     var errorMessage: String?
     var showChat: Bool = false
     var newProjectInput: String = ""
+    var projectForRecording: Project?
+    var showRecording: Bool = false
 
     // MARK: - Dependencies
 
     private let fetchDashboardUseCase: FetchDashboardUseCase
+    private let createProjectFromTemplateUseCase: CreateProjectFromTemplateUseCase
 
     // MARK: - Init
 
-    init(fetchDashboardUseCase: FetchDashboardUseCase) {
+    init(
+        fetchDashboardUseCase: FetchDashboardUseCase,
+        createProjectFromTemplateUseCase: CreateProjectFromTemplateUseCase
+    ) {
         self.fetchDashboardUseCase = fetchDashboardUseCase
+        self.createProjectFromTemplateUseCase = createProjectFromTemplateUseCase
     }
 
     // MARK: - Public Methods
@@ -54,5 +61,23 @@ final class HomeViewModel {
     func dismissChat() {
         showChat = false
         newProjectInput = ""
+    }
+
+    func handleTemplateConfirmed(
+        template: TemplateDTO
+    ) async {
+        do {
+            let project = try await createProjectFromTemplateUseCase.execute(
+                preferredName: newProjectInput,
+                templateDTO: template,
+                bgm: nil
+            )
+            dismissChat()
+            await loadDashboard()
+            projectForRecording = project
+            showRecording = true
+        } catch {
+            errorMessage = "プロジェクトの作成に失敗しました: \(error.localizedDescription)"
+        }
     }
 }

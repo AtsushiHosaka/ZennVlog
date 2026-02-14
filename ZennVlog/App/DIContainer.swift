@@ -5,7 +5,7 @@ final class DIContainer {
 
     // MARK: - Singleton
 
-    static let shared = DIContainer()
+    static let shared = DIContainer(useMock: true)
 
     // MARK: - Properties
 
@@ -40,11 +40,7 @@ final class DIContainer {
         useMock: Bool = false,
         liveDependencies: LiveDependencies? = nil
     ) {
-        #if DEBUG
-        self.useMock = ProcessInfo.processInfo.environment["USE_MOCK"] == "true" || useMock
-        #else
-        self.useMock = false
-        #endif
+        self.useMock = useMock
 
         if self.useMock {
             self.projectRepository = MockProjectRepository()

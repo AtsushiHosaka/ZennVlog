@@ -21,12 +21,24 @@ struct ContentView: View {
         launchesChatOnFirstOpen: Bool = true
     ) {
         let homeUseCase = FetchDashboardUseCase(repository: container.projectRepository)
+        let homeCreateProjectUseCase = CreateProjectFromTemplateUseCase(
+            repository: container.projectRepository
+        )
         let projectListUseCase = FetchProjectsUseCase(repository: container.projectRepository)
+        let projectListCreateProjectUseCase = CreateProjectFromTemplateUseCase(
+            repository: container.projectRepository
+        )
         _homeViewModel = State(
-            wrappedValue: HomeViewModel(fetchDashboardUseCase: homeUseCase)
+            wrappedValue: HomeViewModel(
+                fetchDashboardUseCase: homeUseCase,
+                createProjectFromTemplateUseCase: homeCreateProjectUseCase
+            )
         )
         _projectListViewModel = State(
-            wrappedValue: ProjectListViewModel(fetchProjectsUseCase: projectListUseCase)
+            wrappedValue: ProjectListViewModel(
+                fetchProjectsUseCase: projectListUseCase,
+                createProjectFromTemplateUseCase: projectListCreateProjectUseCase
+            )
         )
         self.launchesChatOnFirstOpen = launchesChatOnFirstOpen
     }

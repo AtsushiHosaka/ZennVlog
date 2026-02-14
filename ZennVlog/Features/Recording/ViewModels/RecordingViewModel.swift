@@ -64,6 +64,9 @@ final class RecordingViewModel {
 
     private var guideImageCache: [Int: UIImage] = [:]
     private let maxCacheSize = 5
+    
+    // MARK: - Private Protocol
+    private let photoLibraryService: PhotoLibraryServiceProtocol
 
     // MARK: - Init
 
@@ -73,7 +76,8 @@ final class RecordingViewModel {
         generateGuideImageUseCase: GenerateGuideImageUseCase,
         analyzeVideoUseCase: AnalyzeVideoUseCase,
         trimVideoUseCase: TrimVideoUseCase,
-        deleteVideoAssetUseCase: DeleteVideoAssetUseCase
+        deleteVideoAssetUseCase: DeleteVideoAssetUseCase,
+        photoLibraryService: PhotoLibraryServiceProtocol
     ) {
         self.project = project
         self.saveVideoAssetUseCase = saveVideoAssetUseCase
@@ -81,6 +85,7 @@ final class RecordingViewModel {
         self.analyzeVideoUseCase = analyzeVideoUseCase
         self.trimVideoUseCase = trimVideoUseCase
         self.deleteVideoAssetUseCase = deleteVideoAssetUseCase
+        self.photoLibraryService = photoLibraryService
     }
 
     // MARK: - Public Methods
@@ -124,22 +129,36 @@ final class RecordingViewModel {
         guard let currentSegment else { return }
 
         do {
+            guard FileManager.default.fileExists(atPath: localFileURL) else {
+                errorMessage = "録画ファイルが見つかりません"
+                return
+            }
+            
+            let url = URL(fileURLWithPath: localFileURL)
+            
+            // ✅ カメラロール（プロジェクトアルバム）へ保存
+            let assetId = try await photoLibraryService.saveVideoToAlbum(
+                videoURL: url,
+                projectName: project.name
+            )
+            
             let segmentOrder = canRecord(for: currentSegment.order) ? currentSegment.order : nil
-
+            
             try await saveVideoAssetUseCase.execute(
                 project: project,
                 localFileURL: localFileURL,
                 duration: duration,
                 segmentOrder: segmentOrder
             )
-
+            
             // 次の空白セグメントに移動
             if let nextEmpty = firstEmptySegmentOrder,
                let nextIndex = segments.firstIndex(where: { $0.order == nextEmpty }) {
                 currentSegmentIndex = nextIndex
             }
         } catch {
-            errorMessage = "動画の保存に失敗しました"
+            print("saveRecordedVideo error:", error)
+            errorMessage = "動画の保存に失敗しました: \(error)"
         }
     }
 

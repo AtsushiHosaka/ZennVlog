@@ -10,13 +10,20 @@ final class ProjectListViewModel {
     private(set) var projects: [Project] = []
     var isLoading: Bool = false
     var errorMessage: String?
+    var projectForRecording: Project?
+    var showRecording: Bool = false
 
     private let fetchProjectsUseCase: FetchProjectsUseCase
+    private let createProjectFromTemplateUseCase: CreateProjectFromTemplateUseCase
 
     // MARK: - Init
 
-    init(fetchProjectsUseCase: FetchProjectsUseCase) {
+    init(
+        fetchProjectsUseCase: FetchProjectsUseCase,
+        createProjectFromTemplateUseCase: CreateProjectFromTemplateUseCase
+    ) {
         self.fetchProjectsUseCase = fetchProjectsUseCase
+        self.createProjectFromTemplateUseCase = createProjectFromTemplateUseCase
     }
 
     // MARK: - Public Methods
@@ -37,5 +44,22 @@ final class ProjectListViewModel {
 
     func refresh() async {
         await loadProjects()
+    }
+
+    func handleTemplateConfirmed(
+        template: TemplateDTO
+    ) async {
+        do {
+            let project = try await createProjectFromTemplateUseCase.execute(
+                preferredName: nil,
+                templateDTO: template,
+                bgm: nil
+            )
+            await loadProjects()
+            projectForRecording = project
+            showRecording = true
+        } catch {
+            errorMessage = "プロジェクトの作成に失敗しました: \(error.localizedDescription)"
+        }
     }
 }

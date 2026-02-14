@@ -47,15 +47,6 @@ actor LiveGeminiRepository: GeminiRepositoryProtocol {
                     "description": "string"
                   }
                 ]
-              } | null,
-              "suggestedBGM": {
-                "id": "string",
-                "title": "string",
-                "description": "string",
-                "genre": "string",
-                "duration": 120,
-                "storageUrl": "string",
-                "tags": ["string"]
               } | null
             }
             """
@@ -78,8 +69,8 @@ actor LiveGeminiRepository: GeminiRepositoryProtocol {
 
             return GeminiChatResponse(
                 text: payload.text,
-                suggestedTemplate: payload.suggestedTemplate,
-                suggestedBGM: payload.suggestedBGM
+                suggestedTemplates: [payload.suggestedTemplate].compactMap { $0 },
+                quickReplies: []
             )
         } catch let error as GeminiRepositoryError {
             throw error
@@ -100,6 +91,25 @@ actor LiveGeminiRepository: GeminiRepositoryProtocol {
             throw error
         } catch {
             throw GeminiRepositoryError.videoAnalysisFailed(underlying: error)
+        }
+    }
+
+    func sendTurn(
+        systemInstruction: String,
+        contents: [[String: Any]],
+        tools: [[String: Any]]
+    ) async throws -> GeminiTurnResponse {
+        do {
+            return try await dataSource.generateContentWithTools(
+                model: textModel,
+                systemInstruction: systemInstruction,
+                contents: contents,
+                tools: tools
+            )
+        } catch let error as GeminiRepositoryError {
+            throw error
+        } catch {
+            throw GeminiRepositoryError.requestFailed(underlying: error)
         }
     }
 
@@ -135,5 +145,4 @@ actor LiveGeminiRepository: GeminiRepositoryProtocol {
 private struct ChatResponsePayload: Decodable {
     let text: String
     let suggestedTemplate: TemplateDTO?
-    let suggestedBGM: BGMTrack?
 }

@@ -3,6 +3,7 @@ import Photos
 /// 写真ライブラリサービスのモック実装
 @MainActor
 final class MockPhotoLibraryService: PhotoLibraryServiceProtocol {
+    
     // MARK: - Mock Configuration
 
     /// エラーを発生させるかどうか
@@ -18,6 +19,9 @@ final class MockPhotoLibraryService: PhotoLibraryServiceProtocol {
 
     /// 最後に保存されたURL
     private(set) var lastSavedURL: URL?
+    
+    /// 既存の動画
+    private(set) var savedVideos: [(url: URL, projectName: String)] = []
 
     // MARK: - PhotoLibraryServiceProtocol
 
@@ -25,6 +29,14 @@ final class MockPhotoLibraryService: PhotoLibraryServiceProtocol {
         // ネットワーク遅延をシミュレーション
         try? await simulateNetworkDelay()
         return mockAuthorizationStatus
+    }
+    
+    func saveVideoToAlbum(videoURL: URL, projectName: String) async throws -> String {
+        // 疑似的に保存履歴を残す
+        savedVideos.append((url: videoURL, projectName: projectName))
+        
+        // 本番のように疑似 assetId を返す
+        return "mock-asset-\(UUID().uuidString)"
     }
 
     func saveVideo(at url: URL) async throws {

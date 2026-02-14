@@ -73,14 +73,34 @@ struct HomeView: View {
             .fullScreenCover(isPresented: $viewModel.showChat) {
                 let container = DIContainer.shared
                 let chatViewModel = ChatViewModel(
-                    sendMessageUseCase: SendMessageWithAIUseCase(repository: container.geminiRepository),
+                    sendMessageUseCase: SendMessageWithAIUseCase(
+                        repository: container.geminiRepository,
+                        templateRepository: container.templateRepository
+                    ),
                     fetchTemplatesUseCase: FetchTemplatesUseCase(repository: container.templateRepository),
                     analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
                     syncChatHistoryUseCase: SyncChatHistoryUseCase(),
-                    initializeChatSessionUseCase: InitializeChatSessionUseCase()
+                    initializeChatSessionUseCase: InitializeChatSessionUseCase(),
+                    initialMessage: viewModel.newProjectInput
                 )
-                ChatView(viewModel: chatViewModel) { _, _ in
-                    viewModel.dismissChat()
+                ChatView(viewModel: chatViewModel) { template in
+                    Task {
+                        await viewModel.handleTemplateConfirmed(template: template)
+                    }
+                }
+            }
+            .navigationDestination(isPresented: $viewModel.showRecording) {
+                if let project = viewModel.projectForRecording {
+                    let container = DIContainer.shared
+                    RecordingView(viewModel: RecordingViewModel(
+                        project: project,
+                        saveVideoAssetUseCase: SaveVideoAssetUseCase(repository: container.projectRepository),
+                        generateGuideImageUseCase: GenerateGuideImageUseCase(repository: container.imagenRepository),
+                        analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
+                        trimVideoUseCase: TrimVideoUseCase(),
+                        deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository),
+                        photoLibraryService: container.photoLibraryService
+                    ))
                 }
             }
         }
@@ -92,13 +112,21 @@ struct HomeView: View {
 #Preview {
     let container = DIContainer.preview
     let useCase = FetchDashboardUseCase(repository: container.projectRepository)
-    let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+    let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: container.projectRepository)
+    let viewModel = HomeViewModel(
+        fetchDashboardUseCase: useCase,
+        createProjectFromTemplateUseCase: createProjectUseCase
+    )
     return HomeView(viewModel: viewModel)
 }
 
 #Preview("空の状態") {
     let repository = MockProjectRepository(emptyForTesting: true)
     let useCase = FetchDashboardUseCase(repository: repository)
-    let viewModel = HomeViewModel(fetchDashboardUseCase: useCase)
+    let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: repository)
+    let viewModel = HomeViewModel(
+        fetchDashboardUseCase: useCase,
+        createProjectFromTemplateUseCase: createProjectUseCase
+    )
     return HomeView(viewModel: viewModel)
 }
