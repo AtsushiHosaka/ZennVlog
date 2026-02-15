@@ -71,16 +71,8 @@ struct HomeView: View {
                 }
             }
             .fullScreenCover(isPresented: $viewModel.showChat) {
-                let container = DIContainer.shared
-                let chatViewModel = ChatViewModel(
-                    sendMessageUseCase: SendMessageWithAIUseCase(
-                        repository: container.geminiRepository,
-                        templateRepository: container.templateRepository
-                    ),
-                    fetchTemplatesUseCase: FetchTemplatesUseCase(repository: container.templateRepository),
-                    analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
-                    syncChatHistoryUseCase: SyncChatHistoryUseCase(),
-                    initializeChatSessionUseCase: InitializeChatSessionUseCase(),
+                let coordinator = AppWorkflowCoordinator(container: .shared)
+                let chatViewModel = coordinator.makeChatViewModel(
                     initialMessage: viewModel.newProjectInput
                 )
                 ChatView(viewModel: chatViewModel) { template in
@@ -91,16 +83,8 @@ struct HomeView: View {
             }
             .navigationDestination(isPresented: $viewModel.showRecording) {
                 if let project = viewModel.projectForRecording {
-                    let container = DIContainer.shared
-                    RecordingView(viewModel: RecordingViewModel(
-                        project: project,
-                        saveVideoAssetUseCase: SaveVideoAssetUseCase(repository: container.projectRepository),
-                        generateGuideImageUseCase: GenerateGuideImageUseCase(repository: container.imagenRepository),
-                        analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
-                        trimVideoUseCase: TrimVideoUseCase(),
-                        deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository),
-                        photoLibraryService: container.photoLibraryService
-                    ))
+                    let coordinator = AppWorkflowCoordinator(container: .shared)
+                    RecordingView(viewModel: coordinator.makeRecordingViewModel(project: project))
                 }
             }
         }
@@ -117,7 +101,7 @@ struct HomeView: View {
         fetchDashboardUseCase: useCase,
         createProjectFromTemplateUseCase: createProjectUseCase
     )
-    return HomeView(viewModel: viewModel)
+    HomeView(viewModel: viewModel)
 }
 
 #Preview("空の状態") {
@@ -128,5 +112,5 @@ struct HomeView: View {
         fetchDashboardUseCase: useCase,
         createProjectFromTemplateUseCase: createProjectUseCase
     )
-    return HomeView(viewModel: viewModel)
+    HomeView(viewModel: viewModel)
 }

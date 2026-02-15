@@ -16,6 +16,7 @@ final class Project {
     var projectDescription: String
     var template: Template?
     @Relationship(deleteRule: .cascade) var videoAssets: [VideoAsset]
+    @Relationship(deleteRule: .cascade) var videoAnalysisSessions: [VideoAnalysisSession]
     @Relationship(deleteRule: .cascade) var subtitles: [Subtitle]
     @Relationship(deleteRule: .cascade) var chatHistory: [ChatMessage]
     var selectedBGMId: String?
@@ -31,6 +32,7 @@ final class Project {
         projectDescription: String = "",
         template: Template? = nil,
         videoAssets: [VideoAsset] = [],
+        videoAnalysisSessions: [VideoAnalysisSession] = [],
         subtitles: [Subtitle] = [],
         chatHistory: [ChatMessage] = [],
         selectedBGMId: String? = nil,
@@ -45,6 +47,7 @@ final class Project {
         self.projectDescription = projectDescription
         self.template = template
         self.videoAssets = videoAssets
+        self.videoAnalysisSessions = videoAnalysisSessions
         self.subtitles = subtitles
         self.chatHistory = chatHistory
         self.selectedBGMId = selectedBGMId

@@ -14,7 +14,7 @@ actor VideoThumbnailProvider {
             return cached
         }
 
-        guard let videoURL = resolveLocalURL(from: localFileURL) else {
+        guard let videoURL = VideoAssetPathResolver.resolveLocalURL(from: localFileURL) else {
             return nil
         }
 
@@ -34,20 +34,5 @@ actor VideoThumbnailProvider {
         } catch {
             return nil
         }
-    }
-
-    private func resolveLocalURL(from value: String) -> URL? {
-        if let url = URL(string: value), url.isFileURL {
-            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-            return url
-        }
-
-        if value.hasPrefix("/") {
-            let url = URL(fileURLWithPath: value)
-            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-            return url
-        }
-
-        return nil
     }
 }

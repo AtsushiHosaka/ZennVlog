@@ -28,6 +28,7 @@ struct ContentView: View {
         let projectListCreateProjectUseCase = CreateProjectFromTemplateUseCase(
             repository: container.projectRepository
         )
+        let projectListDeleteAllUseCase = DeleteAllProjectsUseCase(repository: container.projectRepository)
         _homeViewModel = State(
             wrappedValue: HomeViewModel(
                 fetchDashboardUseCase: homeUseCase,
@@ -37,7 +38,8 @@ struct ContentView: View {
         _projectListViewModel = State(
             wrappedValue: ProjectListViewModel(
                 fetchProjectsUseCase: projectListUseCase,
-                createProjectFromTemplateUseCase: projectListCreateProjectUseCase
+                createProjectFromTemplateUseCase: projectListCreateProjectUseCase,
+                deleteAllProjectsUseCase: projectListDeleteAllUseCase
             )
         )
         self.launchesChatOnFirstOpen = launchesChatOnFirstOpen
@@ -61,10 +63,13 @@ struct ContentView: View {
     @ViewBuilder
     private var rootView: some View {
         #if DEBUG
-        if PreviewFeatureDevelopment.launchMode == .preview {
-            PreviewFeatureDevelopmentRootView()
-        } else {
+        switch PreviewFeatureDevelopment.launchMode {
+        case .app:
             mainTabView
+        case .preview:
+            PreviewFeatureDevelopmentRootView()
+        case .recording:
+            RecordingFeatureDevelopmentRootView()
         }
         #else
         mainTabView

@@ -231,44 +231,53 @@ private func createMockVideoURL() -> URL {
         photoLibrary: container.photoLibraryService,
         activityController: container.activityControllerService
     )
-    return ShareView(viewModel: viewModel)
+    ShareView(viewModel: viewModel)
 }
 
 #Preview("保存成功") {
     let container = DIContainer.preview
-    let viewModel = ShareViewModel(
-        project: createMockProject(),
-        exportedVideoURL: createMockVideoURL(),
-        thumbnailImage: nil,
-        photoLibrary: container.photoLibraryService,
-        activityController: container.activityControllerService
-    )
-    viewModel.saveSuccess = true
-    return ShareView(viewModel: viewModel)
+    let viewModel: ShareViewModel = {
+        let viewModel = ShareViewModel(
+            project: createMockProject(),
+            exportedVideoURL: createMockVideoURL(),
+            thumbnailImage: nil,
+            photoLibrary: container.photoLibraryService,
+            activityController: container.activityControllerService
+        )
+        viewModel.saveSuccess = true
+        return viewModel
+    }()
+    ShareView(viewModel: viewModel)
 }
 
 #Preview("保存中") {
     let container = DIContainer.preview
-    let viewModel = ShareViewModel(
-        project: createMockProject(),
-        exportedVideoURL: createMockVideoURL(),
-        thumbnailImage: nil,
-        photoLibrary: container.photoLibraryService,
-        activityController: container.activityControllerService
-    )
-    viewModel.isSaving = true
-    return ShareView(viewModel: viewModel)
+    let viewModel: ShareViewModel = {
+        let viewModel = ShareViewModel(
+            project: createMockProject(),
+            exportedVideoURL: createMockVideoURL(),
+            thumbnailImage: nil,
+            photoLibrary: container.photoLibraryService,
+            activityController: container.activityControllerService
+        )
+        viewModel.isSaving = true
+        return viewModel
+    }()
+    ShareView(viewModel: viewModel)
 }
 
 #Preview("エラー状態") {
     let container = DIContainer.preview
-    let viewModel = ShareViewModel(
-        project: createMockProject(),
-        exportedVideoURL: createMockVideoURL(),
-        thumbnailImage: nil,
-        photoLibrary: container.photoLibraryService,
-        activityController: container.activityControllerService
-    )
-    viewModel.errorMessage = "写真ライブラリへのアクセスが許可されていません。設定アプリから権限を許可してください。"
-    return ShareView(viewModel: viewModel)
+    let viewModel: ShareViewModel = {
+        let viewModel = ShareViewModel(
+            project: createMockProject(),
+            exportedVideoURL: createMockVideoURL(),
+            thumbnailImage: nil,
+            photoLibrary: container.photoLibraryService,
+            activityController: container.activityControllerService
+        )
+        viewModel.errorMessage = "写真ライブラリへのアクセスが許可されていません。設定アプリから権限を許可してください。"
+        return viewModel
+    }()
+    ShareView(viewModel: viewModel)
 }

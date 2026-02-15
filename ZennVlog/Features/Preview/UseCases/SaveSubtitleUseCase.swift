@@ -85,4 +85,59 @@ final class SaveSubtitleUseCase {
 
         try await repository.save(project)
     }
+
+    func upsertForSegment(
+        project: Project,
+        segment: Segment,
+        text: String,
+        preferredSubtitleId: UUID?
+    ) async throws {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidates = project.subtitles.filter { subtitle in
+            subtitleOverlapsSegment(subtitle, segment: segment)
+        }
+
+        if trimmedText.isEmpty {
+            let candidateIds = Set(candidates.map(\.id))
+            if !candidateIds.isEmpty {
+                project.subtitles.removeAll { candidateIds.contains($0.id) }
+                try await repository.save(project)
+            }
+            return
+        }
+
+        let subtitleToKeep: Subtitle
+        if let preferredSubtitleId,
+           let preferred = candidates.first(where: { $0.id == preferredSubtitleId }) {
+            subtitleToKeep = preferred
+        } else if let existing = candidates.first {
+            subtitleToKeep = existing
+        } else {
+            let created = Subtitle(
+                id: preferredSubtitleId ?? UUID(),
+                startSeconds: segment.startSeconds,
+                endSeconds: segment.endSeconds,
+                text: trimmedText
+            )
+            project.subtitles.append(created)
+            subtitleToKeep = created
+        }
+
+        subtitleToKeep.startSeconds = segment.startSeconds
+        subtitleToKeep.endSeconds = segment.endSeconds
+        subtitleToKeep.text = trimmedText
+
+        let keepId = subtitleToKeep.id
+        project.subtitles.removeAll { subtitle in
+            subtitle.id != keepId && subtitleOverlapsSegment(subtitle, segment: segment)
+        }
+
+        try await repository.save(project)
+    }
+
+    private func subtitleOverlapsSegment(_ subtitle: Subtitle, segment: Segment) -> Bool {
+        let start = max(subtitle.startSeconds, segment.startSeconds)
+        let end = min(subtitle.endSeconds, segment.endSeconds)
+        return end > start
+    }
 }

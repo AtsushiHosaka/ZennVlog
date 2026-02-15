@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 struct GeminiMessage: Sendable {
     let role: String
@@ -41,6 +42,7 @@ actor GeminiRESTDataSource: GeminiRESTDataSourceProtocol {
     private let httpClient: any HTTPClientProtocol
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
+    private let logger = Logger(subsystem: "ZennVlog", category: "GeminiRESTDataSource")
 
     // MARK: - Init
 
@@ -142,7 +144,7 @@ actor GeminiRESTDataSource: GeminiRESTDataSourceProtocol {
 
         #if DEBUG
         if let jsonString = String(data: body, encoding: .utf8) {
-            print("[Gemini Request] \(jsonString.prefix(2000))")
+            logger.debug("[Gemini Request] \(String(jsonString.prefix(2000)), privacy: .private)")
         }
         #endif
 
@@ -156,7 +158,7 @@ actor GeminiRESTDataSource: GeminiRESTDataSourceProtocol {
         } catch let error as HTTPClientError {
             if case .unexpectedStatusCode(let code, let data) = error {
                 let errorBody = String(data: data, encoding: .utf8) ?? "N/A"
-                print("[Gemini Error] status=\(code) body=\(errorBody)")
+                logger.error("[Gemini Error] status=\(code) body=\(errorBody, privacy: .private)")
             }
             throw error
         }

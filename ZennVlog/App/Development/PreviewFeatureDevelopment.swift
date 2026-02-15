@@ -8,23 +8,11 @@ enum PreviewFeatureDevelopment {
     }
 
     @MainActor
-    static func makeDependencies() -> (container: DIContainer, viewModel: PreviewViewModel) {
+    static func makePreviewDependencies() -> (container: DIContainer, viewModel: PreviewViewModel) {
         let templateDTO = makeTemplateDTO()
         let template = makeTemplateModel(from: templateDTO)
         let project = makeRecordedProject(using: template)
-
-        let container = DIContainer(
-            useMock: false,
-            liveDependencies: .init(
-                projectRepository: PreviewFeatureMockProjectRepository(seedProjects: [project]),
-                templateRepository: PreviewFeatureMockTemplateRepository(templates: [templateDTO]),
-                bgmRepository: MockBGMRepository(),
-                geminiRepository: MockGeminiRepository(),
-                imagenRepository: MockImagenRepository(),
-                photoLibraryService: MockPhotoLibraryService(),
-                activityControllerService: MockActivityControllerService()
-            )
-        )
+        let container = makeDevelopmentContainer(project: project, templateDTO: templateDTO)
 
         let viewModel = PreviewViewModel(
             project: project,
@@ -35,6 +23,33 @@ enum PreviewFeatureDevelopment {
             saveBGMSettingsUseCase: SaveBGMSettingsUseCase(repository: container.projectRepository),
             downloadBGMUseCase: DownloadBGMUseCase(repository: container.bgmRepository),
             updateSubtitlePositionUseCase: UpdateSubtitlePositionUseCase(repository: container.projectRepository)
+        )
+
+        return (container, viewModel)
+    }
+
+    @MainActor
+    static func makeRecordingDependencies() -> (container: DIContainer, viewModel: RecordingViewModel) {
+        let templateDTO = makeTemplateDTO()
+        let template = makeTemplateModel(from: templateDTO)
+        let project = makeRecordingProject(using: template)
+        let container = makeDevelopmentContainer(project: project, templateDTO: templateDTO)
+
+        let viewModel = RecordingViewModel(
+            project: project,
+            saveVideoAssetUseCase: SaveVideoAssetUseCase(
+                repository: container.projectRepository,
+                localVideoStorage: container.localVideoStorage
+            ),
+            generateGuideImageUseCase: GenerateGuideImageUseCase(repository: container.imagenRepository),
+            analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
+            trimVideoUseCase: TrimVideoUseCase(),
+            deleteVideoAssetUseCase: DeleteVideoAssetUseCase(
+                repository: container.projectRepository,
+                localVideoStorage: container.localVideoStorage
+            ),
+            photoLibraryService: container.photoLibraryService,
+            localVideoStorage: container.localVideoStorage
         )
 
         return (container, viewModel)
@@ -98,15 +113,47 @@ enum PreviewFeatureDevelopment {
         )
     }
 
+    private static func makeRecordingProject(using template: Template) -> Project {
+        Project(
+            name: "Recording機能開発用プロジェクト",
+            theme: "街歩き",
+            projectDescription: "RecordingViewの開発用モック",
+            template: template,
+            videoAssets: [
+                VideoAsset(segmentOrder: nil, localFileURL: "mock://recording/stock-extra.mov", duration: 10.0)
+            ],
+            status: .recording
+        )
+    }
+
+    private static func makeDevelopmentContainer(project: Project, templateDTO: TemplateDTO) -> DIContainer {
+        DIContainer(
+            useMock: false,
+            liveDependencies: .init(
+                projectRepository: PreviewFeatureMockProjectRepository(seedProjects: [project]),
+                templateRepository: PreviewFeatureMockTemplateRepository(templates: [templateDTO]),
+                bgmRepository: MockBGMRepository(),
+                geminiRepository: MockGeminiRepository(),
+                imagenRepository: MockImagenRepository(),
+                photoLibraryService: MockPhotoLibraryService(),
+                activityControllerService: MockActivityControllerService(),
+                localVideoStorage: LocalVideoStorage()
+            )
+        )
+    }
+
     enum LaunchMode: String {
         case app
         case preview
+        case recording
 
         static func resolve(from environment: [String: String]) -> LaunchMode {
             if let explicitMode = environment["DEV_LAUNCH_MODE"]?.lowercased() {
                 switch explicitMode {
                 case "preview", "previewview", "dev-preview":
                     return .preview
+                case "recording", "recordingview", "dev-recording":
+                    return .recording
                 case "app", "normal", "main":
                     return .app
                 default:
@@ -182,7 +229,7 @@ struct PreviewFeatureDevelopmentRootView: View {
     private let container: DIContainer
 
     init() {
-        let dependencies = PreviewFeatureDevelopment.makeDependencies()
+        let dependencies = PreviewFeatureDevelopment.makePreviewDependencies()
         container = dependencies.container
         _previewViewModel = State(
             wrappedValue: dependencies.viewModel
@@ -191,6 +238,26 @@ struct PreviewFeatureDevelopmentRootView: View {
 
     var body: some View {
         PreviewView(viewModel: previewViewModel, container: container)
+    }
+}
+
+@MainActor
+struct RecordingFeatureDevelopmentRootView: View {
+    @State private var recordingViewModel: RecordingViewModel
+    private let container: DIContainer
+
+    init() {
+        let dependencies = PreviewFeatureDevelopment.makeRecordingDependencies()
+        container = dependencies.container
+        _recordingViewModel = State(
+            wrappedValue: dependencies.viewModel
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            RecordingView(viewModel: recordingViewModel, container: container)
+        }
     }
 }
 #endif

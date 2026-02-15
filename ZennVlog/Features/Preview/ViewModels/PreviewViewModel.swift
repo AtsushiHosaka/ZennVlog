@@ -1,43 +1,55 @@
 import AVFoundation
 import Foundation
 import Observation
+import OSLog
 
 struct SubtitleSheetState: Identifiable, Equatable {
-    let id: UUID
+    let id: Int
+    let segmentOrder: Int
     let subtitleId: UUID?
-    var startSeconds: Double
-    var endSeconds: Double
+    let startSeconds: Double
+    let endSeconds: Double
     var text: String
 
     init(
+        segmentOrder: Int,
         subtitleId: UUID? = nil,
         startSeconds: Double,
         endSeconds: Double,
         text: String
     ) {
+        self.segmentOrder = segmentOrder
         self.subtitleId = subtitleId
-        self.id = subtitleId ?? UUID()
+        self.id = segmentOrder
         self.startSeconds = startSeconds
         self.endSeconds = endSeconds
         self.text = text
     }
 }
 
-struct VideoTimelineSegment: Identifiable, Equatable {
+struct SegmentTimelineItem: Identifiable, Equatable {
     let id: Int
-    let order: Int
+    let segmentOrder: Int
     let startSeconds: Double
     let endSeconds: Double
-    let localFileURL: String?
+    let videoLocalFileURL: String?
+    let subtitleId: UUID?
+    let subtitleText: String?
 
     var duration: Double {
         max(0, endSeconds - startSeconds)
+    }
+
+    var hasSubtitle: Bool {
+        guard let subtitleText else { return false }
+        return !subtitleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 
 @MainActor
 @Observable
 final class PreviewViewModel {
+    private let logger = Logger(subsystem: "ZennVlog", category: "PreviewViewModel")
 
     // MARK: - State
 
@@ -55,6 +67,8 @@ final class PreviewViewModel {
     var exportProgress: Double = 0
     var errorMessage: String?
     var player: AVPlayer?
+    var missingSegmentOrders: [Int] = []
+    var recoveryNotice: String?
 
     // MARK: - Dependencies
 
@@ -65,6 +79,8 @@ final class PreviewViewModel {
     private let saveBGMSettingsUseCase: SaveBGMSettingsUseCase
     private let downloadBGMUseCase: DownloadBGMUseCase
     private let updateSubtitlePositionUseCase: UpdateSubtitlePositionUseCase
+    private let recoverVideoAssetsUseCase: RecoverVideoAssetsUseCase?
+    private let workflowManager: PreviewWorkflowManager?
     private let timePrecision: Double = 100
 
     // MARK: - Playback Control
@@ -74,6 +90,13 @@ final class PreviewViewModel {
     private var wasPlayingBeforeScrub: Bool = false
     private(set) var isUserScrubbingTimeline: Bool = false
     private(set) var isSeekingProgrammatically: Bool = false
+
+    private struct PlayerItemBuildResult {
+        let item: AVPlayerItem?
+        let targetAssetCount: Int
+        let resolvedAssetCount: Int
+        let insertedAssetCount: Int
+    }
 
     // MARK: - Computed
 
@@ -86,22 +109,32 @@ final class PreviewViewModel {
         }
     }
 
-    var activeSubtitleText: String {
-        activeSubtitle(at: currentTime)?.text ?? ""
-    }
+    var segmentTimelineItems: [SegmentTimelineItem] {
+        var assetsByOrder: [Int: VideoAsset] = [:]
+        for asset in project.videoAssets {
+            guard let order = asset.segmentOrder else { continue }
+            if assetsByOrder[order] == nil {
+                assetsByOrder[order] = asset
+            }
+        }
 
-    var timelineSegments: [VideoTimelineSegment] {
-        let segments = project.template?.segments.sorted { $0.order < $1.order } ?? []
-        return segments.map { segment in
-            let asset = project.videoAssets.first { $0.segmentOrder == segment.order }
-            return VideoTimelineSegment(
+        return orderedSegments.map { segment in
+            let subtitle = subtitleForSegment(segment)
+            let asset = assetsByOrder[segment.order]
+            return SegmentTimelineItem(
                 id: segment.order,
-                order: segment.order,
+                segmentOrder: segment.order,
                 startSeconds: segment.startSeconds,
                 endSeconds: segment.endSeconds,
-                localFileURL: asset?.localFileURL
+                videoLocalFileURL: asset?.localFileURL,
+                subtitleId: subtitle?.id,
+                subtitleText: subtitle?.text
             )
         }
+    }
+
+    var activeSubtitleText: String {
+        activeSubtitle(at: currentTime)?.text ?? ""
     }
 
     // MARK: - Init
@@ -114,7 +147,9 @@ final class PreviewViewModel {
         deleteSubtitleUseCase: DeleteSubtitleUseCase,
         saveBGMSettingsUseCase: SaveBGMSettingsUseCase,
         downloadBGMUseCase: DownloadBGMUseCase,
-        updateSubtitlePositionUseCase: UpdateSubtitlePositionUseCase
+        updateSubtitlePositionUseCase: UpdateSubtitlePositionUseCase,
+        recoverVideoAssetsUseCase: RecoverVideoAssetsUseCase? = nil,
+        workflowManager: PreviewWorkflowManager? = nil
     ) {
         self.project = project
         self.exportVideoUseCase = exportVideoUseCase
@@ -124,6 +159,8 @@ final class PreviewViewModel {
         self.saveBGMSettingsUseCase = saveBGMSettingsUseCase
         self.downloadBGMUseCase = downloadBGMUseCase
         self.updateSubtitlePositionUseCase = updateSubtitlePositionUseCase
+        self.recoverVideoAssetsUseCase = recoverVideoAssetsUseCase
+        self.workflowManager = workflowManager
         self.bgmVolume = project.bgmVolume
     }
 
@@ -131,6 +168,16 @@ final class PreviewViewModel {
 
     func loadProject() async {
         errorMessage = nil
+        missingSegmentOrders = []
+        recoveryNotice = nil
+
+        if let recoverVideoAssetsUseCase {
+            let recoveryResult = await recoverVideoAssetsUseCase.execute(project: project)
+            missingSegmentOrders = recoveryResult.missingSegmentOrders
+            if !recoveryResult.messages.isEmpty {
+                recoveryNotice = recoveryResult.messages.joined(separator: "\n")
+            }
+        }
 
         duration = computedDuration()
         bgmVolume = project.bgmVolume
@@ -191,34 +238,21 @@ final class PreviewViewModel {
     }
 
     func activeSubtitle(at time: Double) -> Subtitle? {
-        let normalizedTime = normalizedTimelineTime(time)
-        return subtitles.first { subtitle in
-            let start = normalizedTimelineTime(subtitle.startSeconds)
-            let end = normalizedTimelineTime(subtitle.endSeconds)
-            return normalizedTime >= start && normalizedTime < end
+        guard let (_, segment) = segmentContext(at: time) else { return nil }
+        return subtitleForSegment(segment)
+    }
+
+    func showSubtitleSheet(for segmentOrder: Int) {
+        guard let segment = orderedSegments.first(where: { $0.order == segmentOrder }) else {
+            return
         }
-    }
-
-    func showNewSubtitleSheet(at time: Double? = nil) {
-        let start = max(0, min(time ?? currentTime, max(duration - 0.1, 0)))
-        let defaultLength = 2.0
-        let tentativeEnd = start + defaultLength
-        let maxEnd = duration > 0 ? duration : tentativeEnd
-        let end = max(start + 0.1, min(tentativeEnd, maxEnd))
-
+        let subtitle = subtitleForSegment(segment)
         subtitleSheetState = SubtitleSheetState(
-            startSeconds: start,
-            endSeconds: end,
-            text: ""
-        )
-    }
-
-    func showEditSubtitleSheet(_ subtitle: Subtitle) {
-        subtitleSheetState = SubtitleSheetState(
-            subtitleId: subtitle.id,
-            startSeconds: subtitle.startSeconds,
-            endSeconds: subtitle.endSeconds,
-            text: subtitle.text
+            segmentOrder: segment.order,
+            subtitleId: subtitle?.id,
+            startSeconds: segment.startSeconds,
+            endSeconds: segment.endSeconds,
+            text: subtitle?.text ?? ""
         )
     }
 
@@ -227,21 +261,23 @@ final class PreviewViewModel {
     }
 
     @discardableResult
-    func saveSubtitle(_ draft: SubtitleSheetState) async -> Bool {
+    func saveSubtitle(_ draft: SubtitleSheetState) async -> String? {
+        guard let segment = orderedSegments.first(where: { $0.order == draft.segmentOrder }) else {
+            return "対象セグメントが見つかりません"
+        }
+
         do {
-            try await saveSubtitleUseCase.execute(
+            try await saveSubtitleUseCase.upsertForSegment(
                 project: project,
-                subtitleId: draft.subtitleId,
-                startSeconds: draft.startSeconds,
-                endSeconds: draft.endSeconds,
-                text: draft.text
+                segment: segment,
+                text: draft.text,
+                preferredSubtitleId: draft.subtitleId
             )
             subtitleSheetState = nil
             seek(to: currentTime, shouldSeekPlayer: false)
-            return true
+            return nil
         } catch {
-            errorMessage = error.localizedDescription
-            return false
+            return error.localizedDescription
         }
     }
 
@@ -314,18 +350,22 @@ final class PreviewViewModel {
         }
 
         do {
+            var bgmLocalURL: URL?
             if let selectedBGM {
-                _ = try? await downloadBGMUseCase.execute(track: selectedBGM)
+                bgmLocalURL = try await downloadBGMUseCase.execute(track: selectedBGM)
             }
 
             let url = try await exportVideoUseCase.execute(
                 project: project,
-                bgmTrack: selectedBGM,
+                bgmLocalURL: bgmLocalURL,
                 bgmVolume: bgmVolume,
                 progressHandler: { [weak self] progress in
                     self?.exportProgress = progress
                 }
             )
+            if let workflowManager {
+                try? await workflowManager.markCompleted(project: project)
+            }
             return url
         } catch {
             errorMessage = "書き出しに失敗しました: \(error.localizedDescription)"
@@ -345,9 +385,25 @@ final class PreviewViewModel {
     private func setupPlayer() async {
         teardownPlayerObserver()
 
-        guard let item = await createPlayerItem() else {
+        let buildResult = await createPlayerItem()
+        logger.info(
+            "setupPlayer target=\(buildResult.targetAssetCount, privacy: .public) resolved=\(buildResult.resolvedAssetCount, privacy: .public) inserted=\(buildResult.insertedAssetCount, privacy: .public)"
+        )
+
+        guard let item = buildResult.item else {
             player = nil
+            if buildResult.targetAssetCount > 0 {
+                if buildResult.resolvedAssetCount == 0 {
+                    errorMessage = "動画を読み込めませんでした。過去データの素材ファイルが見つからないため、録画画面で再取り込みしてください。"
+                } else {
+                    errorMessage = "動画を読み込めませんでした。素材ファイルを確認して再取り込みしてください。"
+                }
+            }
             return
+        }
+
+        if buildResult.insertedAssetCount < buildResult.targetAssetCount {
+            errorMessage = "一部の素材ファイルを読み込めませんでした。再生可能な素材のみ表示しています。"
         }
 
         let player = AVPlayer(playerItem: item)
@@ -369,103 +425,53 @@ final class PreviewViewModel {
         player?.pause()
     }
 
-    private func createPlayerItem() async -> AVPlayerItem? {
-        let sortedAssets = project.videoAssets
-            .filter { $0.segmentOrder != nil }
-            .sorted { ($0.segmentOrder ?? 0) < ($1.segmentOrder ?? 0) }
-
-        guard !sortedAssets.isEmpty else {
-            return nil
+    private func createPlayerItem() async -> PlayerItemBuildResult {
+        let assignedAssets = project.videoAssets.filter { $0.segmentOrder != nil }
+        guard !assignedAssets.isEmpty else {
+            return PlayerItemBuildResult(
+                item: nil,
+                targetAssetCount: 0,
+                resolvedAssetCount: 0,
+                insertedAssetCount: 0
+            )
         }
 
-        let composition = AVMutableComposition()
-        guard let compositionVideoTrack = composition.addMutableTrack(
-            withMediaType: .video,
-            preferredTrackID: kCMPersistentTrackID_Invalid
-        ) else {
-            return nil
+        do {
+            let buildResult = try await SegmentCompositionAssembler.build(
+                videoAssets: assignedAssets,
+                segments: orderedSegments,
+                requiresPrimaryAudioTrack: false,
+                strictOnLegacyMissingAsset: false
+            )
+
+            guard buildResult.insertedAnyTrack else {
+                return PlayerItemBuildResult(
+                    item: nil,
+                    targetAssetCount: buildResult.targetAssetCount,
+                    resolvedAssetCount: buildResult.resolvedAssetCount,
+                    insertedAssetCount: buildResult.insertedAssetCount
+                )
+            }
+
+            if let preferredTransform = buildResult.preferredTransform {
+                buildResult.videoTrack.preferredTransform = preferredTransform
+            }
+
+            return PlayerItemBuildResult(
+                item: AVPlayerItem(asset: buildResult.composition),
+                targetAssetCount: buildResult.targetAssetCount,
+                resolvedAssetCount: buildResult.resolvedAssetCount,
+                insertedAssetCount: buildResult.insertedAssetCount
+            )
+        } catch {
+            logger.error("Failed to build preview composition: \(error.localizedDescription, privacy: .public)")
+            return PlayerItemBuildResult(
+                item: nil,
+                targetAssetCount: assignedAssets.count,
+                resolvedAssetCount: 0,
+                insertedAssetCount: 0
+            )
         }
-
-        let compositionAudioTrack = composition.addMutableTrack(
-            withMediaType: .audio,
-            preferredTrackID: kCMPersistentTrackID_Invalid
-        )
-
-        let segmentMap = Dictionary(
-            uniqueKeysWithValues: (project.template?.segments ?? []).map { ($0.order, $0) }
-        )
-
-        var insertedAnyTrack = false
-        var currentInsertTime = CMTime.zero
-
-        for asset in sortedAssets {
-            guard let localURL = resolveLocalVideoURL(from: asset.localFileURL) else {
-                continue
-            }
-
-            let avAsset = AVURLAsset(url: localURL)
-            guard let sourceVideoTrack = try? await avAsset.loadTracks(withMediaType: .video).first else {
-                continue
-            }
-
-            let assetDurationTime = (try? await avAsset.load(.duration)) ?? CMTime(seconds: asset.duration, preferredTimescale: 600)
-            let assetDuration = CMTimeGetSeconds(assetDurationTime)
-            guard assetDuration.isFinite, assetDuration > 0 else {
-                continue
-            }
-
-            let targetDuration: Double
-            if let order = asset.segmentOrder, let segment = segmentMap[order] {
-                targetDuration = max(0.1, segment.endSeconds - segment.startSeconds)
-            } else {
-                targetDuration = max(0.1, asset.duration)
-            }
-
-            let availableDuration = max(0, assetDuration - asset.trimStartSeconds)
-            guard availableDuration > 0 else {
-                continue
-            }
-
-            let clipDuration = min(targetDuration, availableDuration)
-            let sourceStart = CMTime(seconds: asset.trimStartSeconds, preferredTimescale: 600)
-            let sourceDuration = CMTime(seconds: clipDuration, preferredTimescale: 600)
-            let sourceRange = CMTimeRange(start: sourceStart, duration: sourceDuration)
-
-            do {
-                try compositionVideoTrack.insertTimeRange(sourceRange, of: sourceVideoTrack, at: currentInsertTime)
-
-                if let sourceAudioTrack = try? await avAsset.loadTracks(withMediaType: .audio).first,
-                   let compositionAudioTrack {
-                    try compositionAudioTrack.insertTimeRange(sourceRange, of: sourceAudioTrack, at: currentInsertTime)
-                }
-
-                currentInsertTime = CMTimeAdd(currentInsertTime, sourceDuration)
-                insertedAnyTrack = true
-            } catch {
-                continue
-            }
-        }
-
-        guard insertedAnyTrack else {
-            return nil
-        }
-
-        return AVPlayerItem(asset: composition)
-    }
-
-    private func resolveLocalVideoURL(from value: String) -> URL? {
-        if let url = URL(string: value), url.isFileURL {
-            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-            return url
-        }
-
-        if value.hasPrefix("/") {
-            let url = URL(fileURLWithPath: value)
-            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-            return url
-        }
-
-        return nil
     }
 
     private func playerDidUpdateTime(_ time: Double) {
@@ -494,20 +500,17 @@ final class PreviewViewModel {
     }
 
     private func updateCurrentSegmentIndex(for time: Double) {
-        let segments = project.template?.segments.sorted { $0.order < $1.order } ?? []
-
-        guard let matched = segments.first(where: { segment in
-            time >= segment.startSeconds && time < segment.endSeconds
-        }) else {
-            if let lastSegment = segments.last, time >= lastSegment.endSeconds {
-                currentSegmentIndex = lastSegment.order
+        guard let (index, _) = segmentContext(at: time) else {
+            if let lastIndex = orderedSegments.indices.last,
+               time >= orderedSegments[lastIndex].endSeconds {
+                currentSegmentIndex = lastIndex
             } else {
                 currentSegmentIndex = 0
             }
             return
         }
 
-        currentSegmentIndex = matched.order
+        currentSegmentIndex = index
     }
 
     private func clampedTime(_ value: Double) -> Double {
@@ -530,11 +533,18 @@ final class PreviewViewModel {
     }
 
     private func normalizedTimelineTime(_ value: Double) -> Double {
-        (value * timePrecision).rounded() / timePrecision
+        if let workflowManager {
+            return workflowManager.normalizeTimelineTime(
+                value,
+                duration: duration,
+                precision: timePrecision
+            )
+        }
+        return (value * timePrecision).rounded() / timePrecision
     }
 
     private func computedDuration() -> Double {
-        let segmentDuration = project.template?.segments.map(\.endSeconds).max() ?? 0
+        let segmentDuration = orderedSegments.map(\.endSeconds).max() ?? 0
 
         if segmentDuration > 0 {
             return segmentDuration
@@ -570,5 +580,50 @@ final class PreviewViewModel {
                 }
             }
         }
+    }
+
+    private var orderedSegments: [Segment] {
+        (project.template?.segments ?? []).sorted { lhs, rhs in
+            if lhs.startSeconds == rhs.startSeconds {
+                return lhs.order < rhs.order
+            }
+            return lhs.startSeconds < rhs.startSeconds
+        }
+    }
+
+    private func segmentContext(at time: Double) -> (index: Int, segment: Segment)? {
+        let normalizedTime = normalizedTimelineTime(time)
+        for (index, segment) in orderedSegments.enumerated() {
+            if normalizedTime >= segment.startSeconds && normalizedTime < segment.endSeconds {
+                return (index, segment)
+            }
+        }
+        return nil
+    }
+
+    private func subtitleForSegment(_ segment: Segment) -> Subtitle? {
+        let candidates = subtitles
+            .compactMap { subtitle -> (Subtitle, Double)? in
+                let overlap = overlapDuration(subtitle: subtitle, segment: segment)
+                guard overlap > 0 else { return nil }
+                return (subtitle, overlap)
+            }
+            .sorted { lhs, rhs in
+                if lhs.1 == rhs.1 {
+                    if lhs.0.startSeconds == rhs.0.startSeconds {
+                        return lhs.0.id.uuidString < rhs.0.id.uuidString
+                    }
+                    return lhs.0.startSeconds < rhs.0.startSeconds
+                }
+                return lhs.1 > rhs.1
+            }
+
+        return candidates.first?.0
+    }
+
+    private func overlapDuration(subtitle: Subtitle, segment: Segment) -> Double {
+        let start = max(subtitle.startSeconds, segment.startSeconds)
+        let end = min(subtitle.endSeconds, segment.endSeconds)
+        return max(0, end - start)
     }
 }

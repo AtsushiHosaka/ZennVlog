@@ -54,13 +54,13 @@ final class ExportVideoUseCase {
     /// 動画を書き出す
     /// - Parameters:
     ///   - project: プロジェクト
-    ///   - bgmTrack: BGMトラック（nilの場合はBGMなし）
+    ///   - bgmLocalURL: ローカル保存済みBGM URL（nilの場合はBGMなし）
     ///   - bgmVolume: BGM音量（0.0 - 1.0）
     ///   - progressHandler: 進捗ハンドラ（0.0 - 1.0）
     /// - Returns: 書き出された動画ファイルのURL
     func execute(
         project: Project,
-        bgmTrack: BGMTrack?,
+        bgmLocalURL: URL?,
         bgmVolume: Float,
         progressHandler: @escaping (Double) -> Void
     ) async throws -> URL {
@@ -70,12 +70,6 @@ final class ExportVideoUseCase {
         }
 
         let segments = project.template?.segments ?? []
-
-        // BGM URLを取得
-        var bgmURL: URL?
-        if let bgmTrack {
-            bgmURL = URL(string: bgmTrack.storageUrl)
-        }
 
         let sendableHandler: @Sendable (Double) -> Void = { progress in
             Task { @MainActor in
@@ -87,7 +81,7 @@ final class ExportVideoUseCase {
             videoAssets: assignedAssets,
             subtitles: project.subtitles,
             segments: segments,
-            bgmURL: bgmURL,
+            bgmURL: bgmLocalURL,
             bgmVolume: bgmVolume,
             progressHandler: sendableHandler
         )

@@ -5,7 +5,7 @@ final class DIContainer {
 
     // MARK: - Singleton
 
-    static let shared = DIContainer(useMock: true)
+    static let shared = DIContainer()
 
     // MARK: - Properties
 
@@ -19,6 +19,7 @@ final class DIContainer {
         let imagenRepository: any ImagenRepositoryProtocol
         let photoLibraryService: any PhotoLibraryServiceProtocol
         let activityControllerService: any ActivityControllerServiceProtocol
+        let localVideoStorage: LocalVideoStorage
     }
 
     // MARK: - Cached Repositories
@@ -33,6 +34,7 @@ final class DIContainer {
 
     let photoLibraryService: any PhotoLibraryServiceProtocol
     let activityControllerService: any ActivityControllerServiceProtocol
+    let localVideoStorage: LocalVideoStorage
 
     // MARK: - Init
 
@@ -50,6 +52,7 @@ final class DIContainer {
             self.imagenRepository = MockImagenRepository()
             self.photoLibraryService = MockPhotoLibraryService()
             self.activityControllerService = MockActivityControllerService()
+            self.localVideoStorage = LocalVideoStorage()
         } else if let liveDependencies {
             self.projectRepository = liveDependencies.projectRepository
             self.templateRepository = liveDependencies.templateRepository
@@ -58,6 +61,7 @@ final class DIContainer {
             self.imagenRepository = liveDependencies.imagenRepository
             self.photoLibraryService = liveDependencies.photoLibraryService
             self.activityControllerService = liveDependencies.activityControllerService
+            self.localVideoStorage = liveDependencies.localVideoStorage
         } else {
             let httpClient = HTTPClient()
             let firestoreDataSource = FirestoreRESTDataSource()
@@ -83,6 +87,7 @@ final class DIContainer {
             )
             self.photoLibraryService = RealPhotoLibraryService()
             self.activityControllerService = RealActivityControllerService()
+            self.localVideoStorage = LocalVideoStorage()
         }
     }
 }

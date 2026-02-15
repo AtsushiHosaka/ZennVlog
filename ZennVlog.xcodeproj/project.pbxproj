@@ -20,18 +20,7 @@
 		6DFE89A02F3B90A800623D02 /* FirebaseStorageCombine-Community in Frameworks */ = {isa = PBXBuildFile; productRef = 6DFE899F2F3B90A800623D02 /* FirebaseStorageCombine-Community */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXContainerItemProxy section */
-		6D59EF662F34845600382C53 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 6D8D854C2F25460000905F3C /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 6D8D85532F25460000905F3C;
-			remoteInfo = ZennVlog;
-		};
-/* End PBXContainerItemProxy section */
-
 /* Begin PBXFileReference section */
-		6D59EF622F34845600382C53 /* ZennVlogTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ZennVlogTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6D8D85542F25460000905F3C /* ZennVlog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZennVlog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -63,13 +52,6 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		6D59EF5F2F34845600382C53 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		6D8D85512F25460000905F3C /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -103,7 +85,6 @@
 			isa = PBXGroup;
 			children = (
 				6D8D85542F25460000905F3C /* ZennVlog.app */,
-				6D59EF622F34845600382C53 /* ZennVlogTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -111,26 +92,6 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		6D59EF612F34845600382C53 /* ZennVlogTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 6D59EF682F34845600382C53 /* Build configuration list for PBXNativeTarget "ZennVlogTests" */;
-			buildPhases = (
-				6D59EF5E2F34845600382C53 /* Sources */,
-				6D59EF5F2F34845600382C53 /* Frameworks */,
-				6D59EF602F34845600382C53 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				6D59EF672F34845600382C53 /* PBXTargetDependency */,
-			);
-			name = ZennVlogTests;
-			packageProductDependencies = (
-			);
-			productName = ZennVlogTests;
-			productReference = 6D59EF622F34845600382C53 /* ZennVlogTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
 		6D8D85532F25460000905F3C /* ZennVlog */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 6D8D855F2F25460300905F3C /* Build configuration list for PBXNativeTarget "ZennVlog" */;
@@ -174,10 +135,6 @@
 				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
-					6D59EF612F34845600382C53 = {
-						CreatedOnToolsVersion = 26.2;
-						TestTargetID = 6D8D85532F25460000905F3C;
-					};
 					6D8D85532F25460000905F3C = {
 						CreatedOnToolsVersion = 26.2;
 					};
@@ -201,19 +158,11 @@
 			projectRoot = "";
 			targets = (
 				6D8D85532F25460000905F3C /* ZennVlog */,
-				6D59EF612F34845600382C53 /* ZennVlogTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		6D59EF602F34845600382C53 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		6D8D85522F25460000905F3C /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -224,13 +173,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		6D59EF5E2F34845600382C53 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		6D8D85502F25460000905F3C /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -240,57 +182,7 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
-/* Begin PBXTargetDependency section */
-		6D59EF672F34845600382C53 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 6D8D85532F25460000905F3C /* ZennVlog */;
-			targetProxy = 6D59EF662F34845600382C53 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
 /* Begin XCBuildConfiguration section */
-		6D59EF692F34845600382C53 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 93LJ9T3CBB;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = app.hosaka.AS.ZennVlogTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ZennVlog.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ZennVlog";
-			};
-			name = Debug;
-		};
-		6D59EF6A2F34845600382C53 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 93LJ9T3CBB;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = app.hosaka.AS.ZennVlogTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ZennVlog.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ZennVlog";
-			};
-			name = Release;
-		};
 		6D8D855D2F25460300905F3C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -419,7 +311,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-					DEVELOPMENT_TEAM = 93LJ9T3CBB;
+				DEVELOPMENT_TEAM = 93LJ9T3CBB;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "カメラを利用します";
@@ -455,7 +347,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-					DEVELOPMENT_TEAM = 93LJ9T3CBB;
+				DEVELOPMENT_TEAM = 93LJ9T3CBB;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "カメラを利用します";
@@ -487,15 +379,6 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		6D59EF682F34845600382C53 /* Build configuration list for PBXNativeTarget "ZennVlogTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				6D59EF692F34845600382C53 /* Debug */,
-				6D59EF6A2F34845600382C53 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		6D8D854F2F25460000905F3C /* Build configuration list for PBXProject "ZennVlog" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

@@ -4,6 +4,7 @@ import SwiftUI
 struct ProjectListView: View {
     @State var viewModel: ProjectListViewModel
     @State private var showChat = false
+    @State private var showDeleteAllConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -19,21 +20,30 @@ struct ProjectListView: View {
                 }
             }
             .navigationTitle("プロジェクト")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button(role: .destructive) {
+                            showDeleteAllConfirmation = true
+                        } label: {
+                            Label("全プロジェクト削除", systemImage: "trash")
+                        }
+                        .disabled(viewModel.projects.isEmpty || viewModel.isDeletingAllProjects || viewModel.isLoading)
+                    } label: {
+                        if viewModel.isDeletingAllProjects {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                    }
+                }
+            }
             .refreshable {
                 await viewModel.refresh()
             }
             .fullScreenCover(isPresented: $showChat) {
-                let container = DIContainer.shared
-                let chatViewModel = ChatViewModel(
-                    sendMessageUseCase: SendMessageWithAIUseCase(
-                        repository: container.geminiRepository,
-                        templateRepository: container.templateRepository
-                    ),
-                    fetchTemplatesUseCase: FetchTemplatesUseCase(repository: container.templateRepository),
-                    analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
-                    syncChatHistoryUseCase: SyncChatHistoryUseCase(),
-                    initializeChatSessionUseCase: InitializeChatSessionUseCase()
-                )
+                let coordinator = AppWorkflowCoordinator(container: .shared)
+                let chatViewModel = coordinator.makeChatViewModel()
                 ChatView(viewModel: chatViewModel) { template in
                     Task {
                         await viewModel.handleTemplateConfirmed(template: template)
@@ -43,17 +53,19 @@ struct ProjectListView: View {
             }
             .navigationDestination(isPresented: $viewModel.showRecording) {
                 if let project = viewModel.projectForRecording {
-                    let container = DIContainer.shared
-                    RecordingView(viewModel: RecordingViewModel(
-                        project: project,
-                        saveVideoAssetUseCase: SaveVideoAssetUseCase(repository: container.projectRepository),
-                        generateGuideImageUseCase: GenerateGuideImageUseCase(repository: container.imagenRepository),
-                        analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
-                        trimVideoUseCase: TrimVideoUseCase(),
-                        deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository),
-                        photoLibraryService: container.photoLibraryService
-                    ))
+                    let coordinator = AppWorkflowCoordinator(container: .shared)
+                    RecordingView(viewModel: coordinator.makeRecordingViewModel(project: project))
                 }
+            }
+            .alert("全プロジェクトを削除しますか？", isPresented: $showDeleteAllConfirmation) {
+                Button("キャンセル", role: .cancel) {}
+                Button("削除", role: .destructive) {
+                    Task {
+                        await viewModel.deleteAllProjects()
+                    }
+                }
+            } message: {
+                Text("この操作は元に戻せません。プロジェクト情報のみ削除され、ローカル動画ファイルは保持されます。")
             }
         }
         .task {
@@ -125,17 +137,8 @@ struct ProjectListView: View {
             LazyVGrid(columns: columns, spacing: 12) {
                 ForEach(viewModel.projects, id: \.id) { project in
                     NavigationLink {
-                        let container = DIContainer.shared
-                        let recordingViewModel = RecordingViewModel(
-                            project: project,
-                            saveVideoAssetUseCase: SaveVideoAssetUseCase(repository: container.projectRepository),
-                            generateGuideImageUseCase: GenerateGuideImageUseCase(repository: container.imagenRepository),
-                            analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
-                            trimVideoUseCase: TrimVideoUseCase(),
-                            deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository),
-                            photoLibraryService: container.photoLibraryService
-                        )
-                        RecordingView(viewModel: recordingViewModel)
+                        let coordinator = AppWorkflowCoordinator(container: .shared)
+                        RecordingView(viewModel: coordinator.makeRecordingViewModel(project: project))
                     } label: {
                         ProjectCard(project: project)
                     }
@@ -153,11 +156,13 @@ struct ProjectListView: View {
     let container = DIContainer.preview
     let useCase = FetchProjectsUseCase(repository: container.projectRepository)
     let createProjectUseCase = CreateProjectFromTemplateUseCase(repository: container.projectRepository)
+    let deleteAllUseCase = DeleteAllProjectsUseCase(repository: container.projectRepository)
     let viewModel = ProjectListViewModel(
         fetchProjectsUseCase: useCase,
-        createProjectFromTemplateUseCase: createProjectUseCase
+        createProjectFromTemplateUseCase: createProjectUseCase,
+        deleteAllProjectsUseCase: deleteAllUseCase
     )
-    return ProjectListView(viewModel: viewModel)
+    ProjectListView(viewModel: viewModel)
 }
 
 #Preview("空状態") {
@@ -166,29 +171,44 @@ struct ProjectListView: View {
         fetchProjectsUseCase: FetchProjectsUseCase(repository: MockProjectRepository(emptyForTesting: true)),
         createProjectFromTemplateUseCase: CreateProjectFromTemplateUseCase(
             repository: MockProjectRepository(emptyForTesting: true)
+        ),
+        deleteAllProjectsUseCase: DeleteAllProjectsUseCase(
+            repository: MockProjectRepository(emptyForTesting: true)
         )
     )
-    return ProjectListView(viewModel: viewModel)
+    ProjectListView(viewModel: viewModel)
 }
 
 #Preview("ローディング") {
-    let viewModel = ProjectListViewModel(
-        fetchProjectsUseCase: FetchProjectsUseCase(repository: MockProjectRepository()),
-        createProjectFromTemplateUseCase: CreateProjectFromTemplateUseCase(
-            repository: MockProjectRepository()
+    let viewModel: ProjectListViewModel = {
+        let viewModel = ProjectListViewModel(
+            fetchProjectsUseCase: FetchProjectsUseCase(repository: MockProjectRepository()),
+            createProjectFromTemplateUseCase: CreateProjectFromTemplateUseCase(
+                repository: MockProjectRepository()
+            ),
+            deleteAllProjectsUseCase: DeleteAllProjectsUseCase(
+                repository: MockProjectRepository()
+            )
         )
-    )
-    viewModel.isLoading = true
-    return ProjectListView(viewModel: viewModel)
+        viewModel.isLoading = true
+        return viewModel
+    }()
+    ProjectListView(viewModel: viewModel)
 }
 
 #Preview("エラー状態") {
-    let viewModel = ProjectListViewModel(
-        fetchProjectsUseCase: FetchProjectsUseCase(repository: MockProjectRepository()),
-        createProjectFromTemplateUseCase: CreateProjectFromTemplateUseCase(
-            repository: MockProjectRepository()
+    let viewModel: ProjectListViewModel = {
+        let viewModel = ProjectListViewModel(
+            fetchProjectsUseCase: FetchProjectsUseCase(repository: MockProjectRepository()),
+            createProjectFromTemplateUseCase: CreateProjectFromTemplateUseCase(
+                repository: MockProjectRepository()
+            ),
+            deleteAllProjectsUseCase: DeleteAllProjectsUseCase(
+                repository: MockProjectRepository()
+            )
         )
-    )
-    viewModel.errorMessage = "ネットワークエラーが発生しました"
-    return ProjectListView(viewModel: viewModel)
+        viewModel.errorMessage = "ネットワークエラーが発生しました"
+        return viewModel
+    }()
+    ProjectListView(viewModel: viewModel)
 }

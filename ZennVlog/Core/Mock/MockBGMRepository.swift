@@ -26,8 +26,13 @@ final class MockBGMRepository: BGMRepositoryProtocol, Sendable {
 
     func downloadURL(for track: BGMTrack) async throws -> URL {
         try await simulateNetworkDelay()
-        guard let url = URL(string: "mock://bgm/\(track.id).m4a") else {
-            throw BGMRepositoryError.invalidURL(track.storageUrl)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MockBGM", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let url = directory.appendingPathComponent("\(track.id).m4a")
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try Data().write(to: url)
         }
         return url
     }

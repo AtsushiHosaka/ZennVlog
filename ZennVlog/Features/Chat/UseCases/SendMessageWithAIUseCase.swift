@@ -24,11 +24,19 @@ final class SendMessageWithAIUseCase {
     func execute(
         message: String,
         history: [ChatMessageDTO],
+        attachedVideoURL: URL? = nil,
+        projectId: UUID? = nil,
         chatMode: ChatMode = .templateSelection,
         onToolExecution: ((ToolExecutionStatus) -> Void)? = nil
     ) async throws -> GeminiChatResponse {
-        var contents = buildContents(from: history, newMessage: message)
+        var contents = buildContents(
+            from: history,
+            newMessage: message,
+            attachedVideoURL: attachedVideoURL,
+            projectId: projectId
+        )
         var foundTemplates: [TemplateDTO] = []
+        var analyzedVideoResult: VideoAnalysisResult?
 
         let instruction = chatMode == .customCreation
             ? customCreationSystemInstruction : systemInstruction
@@ -51,7 +59,8 @@ final class SendMessageWithAIUseCase {
                 return GeminiChatResponse(
                     text: response.text,
                     suggestedTemplates: templates,
-                    quickReplies: response.quickReplies ?? []
+                    quickReplies: response.quickReplies ?? [],
+                    analyzedVideoResult: analyzedVideoResult
                 )
 
             case .functionCall(let name, let args, let rawPart):
@@ -63,8 +72,13 @@ final class SendMessageWithAIUseCase {
                     let (resultText, templates) = try await executeTemplateSearch(args: args)
                     result = resultText
                     foundTemplates = templates
-                case "videoAnalysis":
-                    result = try await executeVideoAnalysis(args: args)
+                case "videoSummary", "videoAnalysis":
+                    let (resultText, analysisResult) = try await executeVideoSummary(
+                        args: args,
+                        attachedVideoURL: attachedVideoURL
+                    )
+                    result = resultText
+                    analyzedVideoResult = analysisResult
                 case "generateCustomTemplate":
                     let resultTemplate = executeGenerateCustomTemplate(args: args)
                     result = encodeTemplateAsJSON(resultTemplate)
@@ -107,16 +121,28 @@ final class SendMessageWithAIUseCase {
 
     // MARK: - Private Methods
 
-    private func buildContents(from history: [ChatMessageDTO], newMessage: String) -> [[String: Any]] {
+    private func buildContents(
+        from history: [ChatMessageDTO],
+        newMessage: String,
+        attachedVideoURL: URL?,
+        projectId: UUID?
+    ) -> [[String: Any]] {
         var contents: [[String: Any]] = history.map { item in
             [
                 "role": item.role == .user ? "user" : "model",
                 "parts": [["text": item.content]]
             ]
         }
+        var parts: [[String: Any]] = [["text": newMessage]]
+        if let projectId {
+            parts.append(["text": "Project ID: \(projectId.uuidString)"])
+        }
+        if let attachedVideoURL {
+            parts.append(["text": "Attached video URL: \(attachedVideoURL.absoluteString)"])
+        }
         contents.append([
             "role": "user",
-            "parts": [["text": newMessage]]
+            "parts": parts
         ])
         return contents
     }
@@ -150,10 +176,22 @@ final class SendMessageWithAIUseCase {
         return (json, results)
     }
 
-    private func executeVideoAnalysis(args: [String: String]) async throws -> String {
-        guard let urlString = args["videoURL"],
-              let url = URL(string: urlString) else {
-            return "{\"error\": \"Invalid video URL\"}"
+    private func executeVideoSummary(
+        args: [String: String],
+        attachedVideoURL: URL?
+    ) async throws -> (String, VideoAnalysisResult) {
+        let url: URL
+        if let urlString = args["videoURL"] ?? args["videoUrl"],
+           let parsed = URL(string: urlString) {
+            url = parsed
+        } else if let attachedVideoURL {
+            url = attachedVideoURL
+        } else {
+            let message = "{\"error\": \"Missing video URL\"}"
+            return (
+                message,
+                VideoAnalysisResult(segments: [])
+            )
         }
 
         let result = try await repository.analyzeVideo(url: url)
@@ -161,15 +199,21 @@ final class SendMessageWithAIUseCase {
             [
                 "startSeconds": segment.startSeconds,
                 "endSeconds": segment.endSeconds,
-                "description": segment.description
+                "description": segment.description,
+                "confidence": segment.confidence ?? 0
             ] as [String: Any]
         }
 
-        guard let data = try? JSONSerialization.data(withJSONObject: ["segments": segments]),
-              let json = String(data: data, encoding: .utf8) else {
-            return "{\"segments\": []}"
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: [
+                "sourceVideoURL": url.absoluteString,
+                "segments": segments
+            ]
+        ),
+        let json = String(data: data, encoding: .utf8) else {
+            return ("{\"segments\": []}", result)
         }
-        return json
+        return (json, result)
     }
 
     private func executeGenerateCustomTemplate(args: [String: String]) -> TemplateDTO {
@@ -304,10 +348,10 @@ final class SendMessageWithAIUseCase {
 
     You have access to the following tools:
     - templateSearch: Search for vlog templates matching user preferences
-    - videoAnalysis: Analyze attached videos to extract segments
+    - videoSummary: Analyze attached videos to extract segments
 
     When the user describes what kind of vlog they want to create, use templateSearch to find matching templates.
-    When analyzing videos, use videoAnalysis.
+    When analyzing videos, use videoSummary.
 
     After using tools, summarize the result conversationally. Do NOT echo back raw JSON or technical data.
 
@@ -345,7 +389,7 @@ final class SendMessageWithAIUseCase {
             ]
         ],
         [
-            "name": "videoAnalysis",
+            "name": "videoSummary",
             "description": "Analyze an attached video to extract scene segments for vlog editing.",
             "parameters": [
                 "type": "OBJECT",
@@ -433,7 +477,7 @@ final class SendMessageWithAIUseCase {
             ]
         ],
         [
-            "name": "videoAnalysis",
+            "name": "videoSummary",
             "description": "Analyze an attached video to extract scene segments for vlog editing.",
             "parameters": [
                 "type": "OBJECT",

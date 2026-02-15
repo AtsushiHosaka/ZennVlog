@@ -20,10 +20,12 @@ final class SwiftDataProjectRepository: ProjectRepositoryProtocol {
             Template.self,
             Segment.self,
             VideoAsset.self,
+            VideoAnalysisSession.self,
+            VideoAnalysisScene.self,
             Subtitle.self,
             ChatMessage.self
         ])
-        let configuration = ModelConfiguration("ZennVlogPreviewV2")
+        let configuration = ModelConfiguration("ZennVlogPreviewV3")
 
         do {
             let container = try ModelContainer(

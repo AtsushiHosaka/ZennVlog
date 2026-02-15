@@ -236,14 +236,20 @@ struct ChatView: View {
 
 #Preview("テンプレート選択") {
     let container = DIContainer.preview
-    let viewModel = ChatViewModel(
+    let workflowManager = ChatWorkflowManager(
         sendMessageUseCase: SendMessageWithAIUseCase(
             repository: container.geminiRepository,
             templateRepository: container.templateRepository
         ),
+        saveVideoAnalysisSessionUseCase: SaveVideoAnalysisSessionUseCase(
+            repository: container.projectRepository
+        )
+    )
+    let viewModel = ChatViewModel(
+        workflowManager: workflowManager,
         fetchTemplatesUseCase: FetchTemplatesUseCase(repository: container.templateRepository),
         analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
-        syncChatHistoryUseCase: SyncChatHistoryUseCase(),
+        syncChatHistoryUseCase: SyncChatHistoryUseCase(repository: container.projectRepository),
         initializeChatSessionUseCase: InitializeChatSessionUseCase()
     )
     ChatView(viewModel: viewModel) { _ in }
@@ -251,14 +257,20 @@ struct ChatView: View {
 
 #Preview("初期状態") {
     let container = DIContainer.preview
-    let viewModel = ChatViewModel(
+    let workflowManager = ChatWorkflowManager(
         sendMessageUseCase: SendMessageWithAIUseCase(
             repository: container.geminiRepository,
             templateRepository: container.templateRepository
         ),
+        saveVideoAnalysisSessionUseCase: SaveVideoAnalysisSessionUseCase(
+            repository: container.projectRepository
+        )
+    )
+    let viewModel = ChatViewModel(
+        workflowManager: workflowManager,
         fetchTemplatesUseCase: FetchTemplatesUseCase(repository: container.templateRepository),
         analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
-        syncChatHistoryUseCase: SyncChatHistoryUseCase(),
+        syncChatHistoryUseCase: SyncChatHistoryUseCase(repository: container.projectRepository),
         initializeChatSessionUseCase: InitializeChatSessionUseCase(),
         initialMessage: "週末の旅行Vlog"
     )

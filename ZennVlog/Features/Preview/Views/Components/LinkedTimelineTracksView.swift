@@ -3,18 +3,13 @@ import SwiftUI
 struct LinkedTimelineTracksView: View {
     let duration: Double
     let currentTime: Double
-    let videoSegments: [VideoTimelineSegment]
-    let subtitles: [Subtitle]
+    let segmentItems: [SegmentTimelineItem]
     let onSeek: (Double) -> Void
     let onBeginScrub: () -> Void
     let onEndScrub: () -> Void
-    let onSubtitleTap: (Subtitle) -> Void
-    let onAddSubtitle: () -> Void
+    let onSegmentSubtitleTap: (Int) -> Void
 
-    private let pointsPerSecond: CGFloat = 70
-    private let videoTrackHeight: CGFloat = 74
-    private let subtitleTrackHeight: CGFloat = 62
-    private let trackSpacing: CGFloat = 10
+    private let pointsPerSecond: CGFloat = 40
     @State private var isScrubbing = false
     @State private var scrubStartTime: Double = 0
 
@@ -35,13 +30,7 @@ struct LinkedTimelineTracksView: View {
                 }
                 .clipped()
                 .contentShape(Rectangle())
-                .gesture(
-                    scrubGesture(
-                        viewportSize: proxy.size,
-                        contentOffsetX: contentOffsetX
-                    ),
-                    including: .all
-                )
+                .highPriorityGesture(scrubGesture(), including: .all)
             }
             .frame(height: 152)
         }
@@ -53,14 +42,6 @@ struct LinkedTimelineTracksView: View {
                 .font(.subheadline.weight(.semibold))
 
             Spacer()
-
-            Button {
-                onAddSubtitle()
-            } label: {
-                Label("テロップ追加", systemImage: "plus")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
     }
 
@@ -79,7 +60,7 @@ struct LinkedTimelineTracksView: View {
     private func timelineContent(width: CGFloat) -> some View {
         VStack(spacing: 10) {
             VideoTimelineTrack(
-                segments: videoSegments,
+                segmentItems: segmentItems,
                 duration: duration,
                 pointsPerSecond: pointsPerSecond
             )
@@ -95,43 +76,42 @@ struct LinkedTimelineTracksView: View {
                 .fill(Color(UIColor.tertiarySystemBackground).opacity(0.95))
                 .frame(width: width, height: 62)
 
-            ForEach(subtitles, id: \.id) { subtitle in
-                Text(subtitle.text)
+            ForEach(segmentItems) { item in
+                Text(item.subtitleText?.isEmpty == false ? (item.subtitleText ?? "") : "未入力")
                     .font(.caption)
                     .lineLimit(1)
                     .padding(.horizontal, 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: 40)
-                    .background(Color.accentColor.opacity(0.22))
+                    .background(item.hasSubtitle ? Color.accentColor.opacity(0.22) : Color.gray.opacity(0.15))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.accentColor.opacity(0.8), lineWidth: 1)
+                            .stroke(
+                                item.hasSubtitle ? Color.accentColor.opacity(0.8) : Color.gray.opacity(0.4),
+                                style: StrokeStyle(lineWidth: 1, dash: item.hasSubtitle ? [] : [4, 4])
+                            )
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .allowsHitTesting(false)
-                    .frame(width: subtitleWidth(subtitle))
-                    .offset(x: CGFloat(subtitle.startSeconds) * pointsPerSecond, y: 11)
+                    .frame(width: subtitleWidth(item))
+                    .offset(x: CGFloat(item.startSeconds) * pointsPerSecond, y: 11)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        onSegmentSubtitleTap(item.segmentOrder)
+                    }
             }
         }
         .frame(width: width, height: 62, alignment: .leading)
     }
 
-    private func subtitleWidth(_ subtitle: Subtitle) -> CGFloat {
-        let raw = CGFloat(subtitle.endSeconds - subtitle.startSeconds) * pointsPerSecond
+    private func subtitleWidth(_ item: SegmentTimelineItem) -> CGFloat {
+        let raw = CGFloat(item.endSeconds - item.startSeconds) * pointsPerSecond
         return max(raw, 56)
     }
 
-    private func scrubGesture(
-        viewportSize: CGSize,
-        contentOffsetX: CGFloat
-    ) -> some Gesture {
-        DragGesture(minimumDistance: 0)
+    private func scrubGesture() -> some Gesture {
+        DragGesture(minimumDistance: 1)
             .onChanged { value in
                 if !isScrubbing {
-                    let translation = value.translation
-                    if abs(translation.width) < 0.5, abs(translation.height) < 0.5 {
-                        return
-                    }
                     isScrubbing = true
                     scrubStartTime = currentTime
                     onBeginScrub()
@@ -141,44 +121,11 @@ struct LinkedTimelineTracksView: View {
                 let nextTime = clampedTime(scrubStartTime + deltaSeconds)
                 onSeek(nextTime)
             }
-            .onEnded { value in
-                if !isScrubbing {
-                    handleTap(value: value, viewportSize: viewportSize, contentOffsetX: contentOffsetX)
-                    return
-                }
-
+            .onEnded { _ in
                 guard isScrubbing else { return }
                 isScrubbing = false
                 onEndScrub()
             }
-    }
-
-    private func handleTap(
-        value: DragGesture.Value,
-        viewportSize: CGSize,
-        contentOffsetX: CGFloat
-    ) {
-        let translation = value.translation
-        guard abs(translation.width) < 8, abs(translation.height) < 8 else { return }
-
-        let trackHeight = videoTrackHeight + trackSpacing + subtitleTrackHeight
-        let topInset = max(0, (viewportSize.height - trackHeight) / 2)
-        let subtitleTop = topInset + videoTrackHeight + trackSpacing
-        let subtitleBottom = subtitleTop + subtitleTrackHeight
-
-        let y = value.location.y
-        guard y >= subtitleTop, y <= subtitleBottom else { return }
-
-        let tappedTime = clampedTime(Double((value.location.x - contentOffsetX) / pointsPerSecond))
-        guard let subtitle = subtitle(at: tappedTime) else { return }
-        onSubtitleTap(subtitle)
-    }
-
-    private func subtitle(at time: Double) -> Subtitle? {
-        let rounded = (time * 100).rounded() / 100
-        return subtitles.first { subtitle in
-            rounded >= subtitle.startSeconds && rounded < subtitle.endSeconds
-        }
     }
 
     private func clampedTime(_ value: Double) -> Double {
@@ -191,21 +138,39 @@ struct LinkedTimelineTracksView: View {
     LinkedTimelineTracksView(
         duration: 40,
         currentTime: 12,
-        videoSegments: [
-            VideoTimelineSegment(id: 0, order: 0, startSeconds: 0, endSeconds: 8, localFileURL: nil),
-            VideoTimelineSegment(id: 1, order: 1, startSeconds: 8, endSeconds: 20, localFileURL: nil),
-            VideoTimelineSegment(id: 2, order: 2, startSeconds: 20, endSeconds: 40, localFileURL: nil)
-        ],
-        subtitles: [
-            Subtitle(startSeconds: 1, endSeconds: 4, text: "朝の散歩"),
-            Subtitle(startSeconds: 8, endSeconds: 13, text: "駅まで移動"),
-            Subtitle(startSeconds: 22, endSeconds: 29, text: "ランチタイム")
+        segmentItems: [
+            SegmentTimelineItem(
+                id: 0,
+                segmentOrder: 0,
+                startSeconds: 0,
+                endSeconds: 8,
+                videoLocalFileURL: nil,
+                subtitleId: UUID(),
+                subtitleText: "朝の散歩"
+            ),
+            SegmentTimelineItem(
+                id: 1,
+                segmentOrder: 1,
+                startSeconds: 8,
+                endSeconds: 20,
+                videoLocalFileURL: nil,
+                subtitleId: nil,
+                subtitleText: nil
+            ),
+            SegmentTimelineItem(
+                id: 2,
+                segmentOrder: 2,
+                startSeconds: 20,
+                endSeconds: 40,
+                videoLocalFileURL: nil,
+                subtitleId: UUID(),
+                subtitleText: "ランチタイム"
+            )
         ],
         onSeek: { _ in },
         onBeginScrub: {},
         onEndScrub: {},
-        onSubtitleTap: { _ in },
-        onAddSubtitle: {}
+        onSegmentSubtitleTap: { _ in }
     )
     .padding()
 }

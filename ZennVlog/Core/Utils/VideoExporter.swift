@@ -32,72 +32,54 @@ actor VideoExporter {
         bgmVolume: Float,
         progressHandler: @escaping @Sendable (Double) -> Void
     ) async throws -> URL {
-        // 1. セグメント順にソート
-        let sortedAssets = videoAssets
-            .filter { $0.segmentOrder != nil }
-            .sorted { ($0.segmentOrder ?? 0) < ($1.segmentOrder ?? 0) }
-
-        guard !sortedAssets.isEmpty else {
+        let assignedAssets = videoAssets.filter { $0.segmentOrder != nil }
+        guard !assignedAssets.isEmpty else {
             throw VideoExporterError.noVideoTracks
         }
 
-        // 2. コンポジション作成
-        let composition = AVMutableComposition()
-
-        guard let videoTrack = composition.addMutableTrack(
-            withMediaType: .video,
-            preferredTrackID: kCMPersistentTrackID_Invalid
-        ),
-        let audioTrack = composition.addMutableTrack(
-            withMediaType: .audio,
-            preferredTrackID: kCMPersistentTrackID_Invalid
-        ) else {
-            throw VideoExporterError.compositionFailed("コンポジショントラックの作成に失敗しました")
+        let assembled: SegmentCompositionAssembler.BuildResult
+        do {
+            assembled = try await SegmentCompositionAssembler.build(
+                videoAssets: assignedAssets,
+                segments: segments,
+                requiresPrimaryAudioTrack: true,
+                strictOnLegacyMissingAsset: true
+            )
+        } catch let error as SegmentCompositionAssemblerError {
+            switch error {
+            case .videoTrackCreationFailed, .audioTrackCreationFailed:
+                throw VideoExporterError.compositionFailed("コンポジショントラックの作成に失敗しました")
+            case .legacyAssetNotFound(let path):
+                throw VideoExporterError.assetLoadFailed("動画ファイルが見つかりません: \(path)")
+            case .legacyAssetInvalidDuration(let fileName):
+                throw VideoExporterError.assetLoadFailed("動画の長さが不正です: \(fileName)")
+            case .legacyTrimOutOfRange(let fileName):
+                throw VideoExporterError.assetLoadFailed("trim開始位置が動画長を超えています: \(fileName)")
+            }
+        } catch {
+            throw VideoExporterError.compositionFailed(error.localizedDescription)
         }
 
-        var currentTime = CMTime.zero
-        var videoSize = CGSize(width: 1920, height: 1080)
-
-        // 3. 各動画素材をコンポジションに追加
-        for asset in sortedAssets {
-            let url = URL(fileURLWithPath: asset.localFileURL)
-            let avAsset = AVURLAsset(url: url)
-
-            // セグメントの長さを取得（trimStartSeconds + セグメント長で切り出し）
-            let segmentDuration: Double
-            if let segmentOrder = asset.segmentOrder,
-               let segment = segments.first(where: { $0.order == segmentOrder }) {
-                segmentDuration = segment.endSeconds - segment.startSeconds
-            } else {
-                segmentDuration = asset.duration
-            }
-
-            let startTime = CMTime(seconds: asset.trimStartSeconds, preferredTimescale: 600)
-            let clipDuration = CMTime(seconds: segmentDuration, preferredTimescale: 600)
-            let timeRange = CMTimeRange(start: startTime, duration: clipDuration)
-
-            // ビデオトラック追加
-            if let sourceVideoTrack = try? await avAsset.loadTracks(withMediaType: .video).first {
-                try videoTrack.insertTimeRange(timeRange, of: sourceVideoTrack, at: currentTime)
-
-                // 最初のアセットからビデオサイズを取得
-                if currentTime == .zero {
-                    let naturalSize = try await sourceVideoTrack.load(.naturalSize)
-                    videoSize = naturalSize
-                }
-            }
-
-            // オーディオトラック追加（元の動画音声）
-            if let sourceAudioTrack = try? await avAsset.loadTracks(withMediaType: .audio).first {
-                try audioTrack.insertTimeRange(timeRange, of: sourceAudioTrack, at: currentTime)
-            }
-
-            currentTime = CMTimeAdd(currentTime, clipDuration)
+        guard assembled.insertedAnyTrack else {
+            throw VideoExporterError.noVideoTracks
         }
+
+        let composition = assembled.composition
+        let videoTrack = assembled.videoTrack
+        let currentTime = assembled.duration
+        let videoSize = assembled.videoSize
+        let preferredTransform = assembled.preferredTransform ?? .identity
 
         // 4. BGMオーディオトラック追加
         var audioMix: AVMutableAudioMix?
         if let bgmURL {
+            guard bgmURL.isFileURL else {
+                throw VideoExporterError.assetLoadFailed("BGMはローカルURLで指定してください")
+            }
+            guard FileManager.default.fileExists(atPath: bgmURL.path) else {
+                throw VideoExporterError.assetLoadFailed("BGMファイルが見つかりません: \(bgmURL.lastPathComponent)")
+            }
+
             let bgmAsset = AVURLAsset(url: bgmURL)
             if let bgmAudioTrack = try? await bgmAsset.loadTracks(withMediaType: .audio).first,
                let bgmCompositionTrack = composition.addMutableTrack(
@@ -128,6 +110,7 @@ actor VideoExporter {
             compositionVideoTrack: videoTrack,
             size: videoSize,
             duration: currentTime,
+            preferredTransform: preferredTransform,
             subtitles: subtitles,
             segments: segments
         )
@@ -186,6 +169,7 @@ actor VideoExporter {
         compositionVideoTrack: AVMutableCompositionTrack,
         size: CGSize,
         duration: CMTime,
+        preferredTransform: CGAffineTransform,
         subtitles: [Subtitle],
         segments _: [Segment]
     ) -> AVMutableVideoComposition {
@@ -279,9 +263,11 @@ actor VideoExporter {
         let layerInstruction = AVMutableVideoCompositionLayerInstruction(
             assetTrack: compositionVideoTrack
         )
+        layerInstruction.setTransform(preferredTransform, at: .zero)
         instruction.layerInstructions = [layerInstruction]
         videoComposition.instructions = [instruction]
 
         return videoComposition
     }
+
 }

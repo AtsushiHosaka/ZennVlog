@@ -28,7 +28,7 @@ final class ChatViewModel {
 
     // MARK: - Dependencies
 
-    private let sendMessageUseCase: SendMessageWithAIUseCase
+    private let workflowManager: ChatWorkflowManager
     private let fetchTemplatesUseCase: FetchTemplatesUseCase
     private let analyzeVideoUseCase: AnalyzeVideoUseCase
     private let syncChatHistoryUseCase: SyncChatHistoryUseCase
@@ -44,7 +44,7 @@ final class ChatViewModel {
     private let initialMessage: String
 
     init(
-        sendMessageUseCase: SendMessageWithAIUseCase,
+        workflowManager: ChatWorkflowManager,
         fetchTemplatesUseCase: FetchTemplatesUseCase,
         analyzeVideoUseCase: AnalyzeVideoUseCase,
         syncChatHistoryUseCase: SyncChatHistoryUseCase,
@@ -53,7 +53,7 @@ final class ChatViewModel {
         initialMessage: String = "",
         chatMode: ChatMode? = nil
     ) {
-        self.sendMessageUseCase = sendMessageUseCase
+        self.workflowManager = workflowManager
         self.fetchTemplatesUseCase = fetchTemplatesUseCase
         self.analyzeVideoUseCase = analyzeVideoUseCase
         self.syncChatHistoryUseCase = syncChatHistoryUseCase
@@ -96,16 +96,20 @@ final class ChatViewModel {
         isLoading = true
         quickReplies = []
         self.attachedVideoURL = nil
-        var shouldAnalyzeAttachedVideo = false
 
         do {
-            let response = try await sendMessageUseCase.execute(
+            let response = try await workflowManager.sendMessage(
                 message: messageText,
                 history: history,
+                attachedVideoURL: attachedVideoURL,
+                projectId: projectId,
                 chatMode: chatMode,
                 onToolExecution: { [weak self] status in
                     guard let self else { return }
                     self.toolExecutionStatus = status
+                    if status.toolName == "videoSummary" || status.toolName == "videoAnalysis" {
+                        self.isAnalyzingVideo = status.state == .executing
+                    }
                     if status.state == .executing {
                         let hint = self.toolHintMessage(for: status.toolName)
                         let hintMessage = ChatMessage(role: .assistant, content: hint)
@@ -125,19 +129,13 @@ final class ChatViewModel {
             } else {
                 quickReplies = response.quickReplies
             }
-            shouldAnalyzeAttachedVideo = true
         } catch {
             errorMessage = error.localizedDescription
         }
 
         isLoading = false
         toolExecutionStatus = nil
-
-        if shouldAnalyzeAttachedVideo, let attachedVideoURL {
-            Task {
-                await analyzeAttachedVideoInBackground(attachedVideoURL)
-            }
-        }
+        isAnalyzingVideo = false
     }
 
     func confirmTemplate() {
@@ -215,7 +213,11 @@ final class ChatViewModel {
 
     private func syncMessage(_ message: ChatMessage) async {
         guard let projectId else { return }
-        try? await syncChatHistoryUseCase.execute(projectId: projectId, message: message)
+        do {
+            try await syncChatHistoryUseCase.execute(projectId: projectId, message: message)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func appendUserOperationMessage(_ text: String) async {
@@ -224,42 +226,11 @@ final class ChatViewModel {
         await syncMessage(message)
     }
 
-    private func analyzeAttachedVideoInBackground(_ url: URL) async {
-        guard !isAnalyzingVideo else { return }
-        isAnalyzingVideo = true
-        defer { isAnalyzingVideo = false }
-
-        do {
-            let result = try await analyzeVideoUseCase.execute(videoURL: url)
-            let summary = makeVideoAnalysisSummary(result)
-            let assistantMessage = ChatMessage(role: .assistant, content: summary)
-            messages.append(assistantMessage)
-            await syncMessage(assistantMessage)
-        } catch {
-            errorMessage = "動画解析に失敗しました: \(error.localizedDescription)"
-        }
-    }
-
-    private func makeVideoAnalysisSummary(_ result: VideoAnalysisResult) -> String {
-        guard !result.segments.isEmpty else {
-            return "動画を解析しました。大きなシーン分割は検出できませんでした。"
-        }
-
-        let lines = result.segments.prefix(3).enumerated().map { index, segment in
-            "\(index + 1). \(Int(segment.startSeconds))s-\(Int(segment.endSeconds))s: \(segment.description)"
-        }
-
-        return """
-        動画の解析が完了しました。主なシーンは次の通りです。
-        \(lines.joined(separator: "\n"))
-        """
-    }
-
     private func toolHintMessage(for toolName: String) -> String {
         switch toolName {
         case "templateSearch":
             return "ぴったりのテンプレートを探してみますね！"
-        case "videoAnalysis":
+        case "videoSummary", "videoAnalysis":
             return "動画を分析してみますね！"
         case "generateCustomTemplate":
             return "オリジナルテンプレートを作成しますね！"

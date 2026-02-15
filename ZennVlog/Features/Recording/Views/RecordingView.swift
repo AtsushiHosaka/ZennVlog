@@ -1,24 +1,46 @@
+import PhotosUI
 import SwiftUI
 
 /// 撮影画面
 /// テンプレートに沿って動画素材を撮影・追加
 struct RecordingView: View {
     @State var viewModel: RecordingViewModel
+    let container: DIContainer
     @Environment(\.dismiss) private var dismiss
     @State private var stockAssetToAssign: VideoAsset?
     @State private var showPreview = false
     @State private var recordingTimer: Timer?
     @State private var remainingSeconds: Double = 0
+    @State private var showVideoPicker = false
+    @State private var selectedVideoItem: PhotosPickerItem?
+    @State private var photoPickerTargetSegmentOrder: Int?
+    @State private var trimStartSeconds: Double = 0
+    @State private var trimTargetSegmentOrder: Int?
     
 //    @StateObject private var recorder = CameraRecorderService()
     @StateObject private var cameraService = CameraService()
     @Environment(\.scenePhase) private var scenePhase
+
+    init(viewModel: RecordingViewModel, container: DIContainer = .shared) {
+        _viewModel = State(wrappedValue: viewModel)
+        self.container = container
+    }
     
     var body: some View {
         contentView
         .navigationTitle(viewModel.project.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    photoPickerTargetSegmentOrder = nil
+                    showVideoPicker = true
+                } label: {
+                    Label("動画追加", systemImage: "photo.on.rectangle")
+                }
+                .disabled(viewModel.isRecording || suggestedTrimSegmentOrder == nil)
+            }
+
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("編集") {
                     showPreview = true
@@ -48,6 +70,22 @@ struct RecordingView: View {
         )
         .navigationDestination(isPresented: $showPreview) {
             previewDestination
+        }
+        .photosPicker(
+            isPresented: $showVideoPicker,
+            selection: $selectedVideoItem,
+            matching: .videos
+        )
+        .onChange(of: selectedVideoItem) { _, item in
+            handleSelectedVideo(item)
+        }
+        .onChange(of: showVideoPicker) { _, isPresented in
+            if !isPresented, selectedVideoItem == nil {
+                photoPickerTargetSegmentOrder = nil
+            }
+        }
+        .sheet(isPresented: $viewModel.showTrimEditor) {
+            trimEditorSheet
         }
         .onAppear {
             if scenePhase == .active {
@@ -112,23 +150,10 @@ struct RecordingView: View {
     }
 
     private var previewDestination: some View {
-        let container = DIContainer.shared
+        let coordinator = AppWorkflowCoordinator(container: container)
         return PreviewView(
-            viewModel: makePreviewViewModel(container: container),
-            container: container
-        )
-    }
-
-    private func makePreviewViewModel(container: DIContainer) -> PreviewViewModel {
-        PreviewViewModel(
-            project: viewModel.project,
-            exportVideoUseCase: ExportVideoUseCase(repository: container.projectRepository),
-            fetchBGMTracksUseCase: FetchBGMTracksUseCase(repository: container.bgmRepository),
-            saveSubtitleUseCase: SaveSubtitleUseCase(repository: container.projectRepository),
-            deleteSubtitleUseCase: DeleteSubtitleUseCase(repository: container.projectRepository),
-            saveBGMSettingsUseCase: SaveBGMSettingsUseCase(repository: container.projectRepository),
-            downloadBGMUseCase: DownloadBGMUseCase(repository: container.bgmRepository),
-            updateSubtitlePositionUseCase: UpdateSubtitlePositionUseCase(repository: container.projectRepository)
+            viewModel: coordinator.makePreviewViewModel(project: viewModel.project),
+            container: coordinator.container
         )
     }
 
@@ -149,6 +174,19 @@ struct RecordingView: View {
         }
     }
 
+    private var suggestedTrimSegmentOrder: Int? {
+        if let currentSegment = viewModel.currentSegment,
+           viewModel.canRecord(for: currentSegment.order) {
+            return currentSegment.order
+        }
+        return viewModel.firstEmptySegmentOrder
+    }
+
+    private var trimTargetSegment: Segment? {
+        guard let trimTargetSegmentOrder else { return nil }
+        return viewModel.segments.first { $0.order == trimTargetSegmentOrder }
+    }
+
     @ViewBuilder
     private var assignmentDialogActions: some View {
         ForEach(assignableSegments, id: \.id) { segment in
@@ -166,6 +204,48 @@ struct RecordingView: View {
             stockAssetToAssign = nil
         }
     }
+
+    @ViewBuilder
+    private var trimEditorSheet: some View {
+        if let videoURL = viewModel.videoToTrim,
+           let segment = trimTargetSegment {
+            TrimEditorView(
+                videoURL: videoURL,
+                videoScenes: viewModel.videoScenes,
+                segmentDuration: max(0.1, segment.endSeconds - segment.startSeconds),
+                totalVideoDuration: max(viewModel.selectedVideoDuration, segment.endSeconds - segment.startSeconds),
+                trimStartSeconds: $trimStartSeconds,
+                onConfirm: { startSeconds in
+                    Task {
+                        await viewModel.trimAndSaveVideo(
+                            startSeconds: startSeconds,
+                            for: segment.order
+                        )
+                        if !viewModel.showTrimEditor {
+                            trimTargetSegmentOrder = nil
+                            trimStartSeconds = 0
+                        }
+                    }
+                },
+                onCancel: {
+                    viewModel.cancelTrimEditor()
+                    trimTargetSegmentOrder = nil
+                    trimStartSeconds = 0
+                }
+            )
+        } else {
+            VStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.title2)
+                Text("割り当て可能なセグメントがありません")
+                    .font(.body)
+            }
+            .presentationDetents([.medium])
+            .onAppear {
+                viewModel.cancelTrimEditor()
+            }
+        }
+    }
     
     private var cameraSection: some View {
         CameraPreview(
@@ -180,13 +260,18 @@ struct RecordingView: View {
     private var timeLineSection: some View {
         TimelineView(
             segments: viewModel.segments,
-            videoAssets: viewModel.videoAssets,
+            videoAssets: viewModel.recordedVideoAssets,
             currentSegmentIndex: viewModel.currentSegmentIndex,
             totalWidth: 300,
             onSegmentTap: { order in
                 if let index = viewModel.segments.firstIndex(where: { $0.order == order }) {
                     viewModel.selectSegment(at: index)
                 }
+
+                guard !viewModel.isRecording else { return }
+                guard viewModel.isSegmentMissing(order) else { return }
+                photoPickerTargetSegmentOrder = order
+                showVideoPicker = true
             },
             onSegmentDelete: { order in
                 Task {
@@ -202,6 +287,14 @@ struct RecordingView: View {
         VStack(spacing: 16) {
             // ガイド表示トグル
             HStack {
+                Button {
+                    photoPickerTargetSegmentOrder = nil
+                    showVideoPicker = true
+                } label: {
+                    Label("既存動画を選択", systemImage: "plus.rectangle.on.folder")
+                        .font(.subheadline)
+                }
+                .disabled(viewModel.isRecording || suggestedTrimSegmentOrder == nil)
                 
                 Spacer()
                 
@@ -306,6 +399,43 @@ struct RecordingView: View {
         let secs = Int(seconds) % 60
         return String(format: "%d:%02d", mins, secs)
     }
+
+    private func handleSelectedVideo(_ item: PhotosPickerItem?) {
+        guard let item else { return }
+        let targetOrder = photoPickerTargetSegmentOrder ?? suggestedTrimSegmentOrder
+        guard let targetOrder else {
+            viewModel.errorMessage = "割り当て可能なセグメントがありません"
+            selectedVideoItem = nil
+            photoPickerTargetSegmentOrder = nil
+            return
+        }
+
+        trimTargetSegmentOrder = targetOrder
+        trimStartSeconds = 0
+
+        Task {
+            defer {
+                selectedVideoItem = nil
+                photoPickerTargetSegmentOrder = nil
+            }
+
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self) else {
+                    viewModel.errorMessage = "動画データを読み込めませんでした"
+                    return
+                }
+
+                let tempURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(UUID().uuidString)
+                    .appendingPathExtension("mp4")
+                try data.write(to: tempURL, options: .atomic)
+
+                await viewModel.processSelectedVideo(url: tempURL)
+            } catch {
+                viewModel.errorMessage = "動画の読み込みに失敗しました: \(error.localizedDescription)"
+            }
+        }
+    }
 }
 
 // MARK: - Previews
@@ -330,12 +460,19 @@ struct RecordingView: View {
     )
     let viewModel = RecordingViewModel(
         project: project,
-        saveVideoAssetUseCase: SaveVideoAssetUseCase(repository: container.projectRepository),
+        saveVideoAssetUseCase: SaveVideoAssetUseCase(
+            repository: container.projectRepository,
+            localVideoStorage: container.localVideoStorage
+        ),
         generateGuideImageUseCase: GenerateGuideImageUseCase(repository: container.imagenRepository),
         analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
         trimVideoUseCase: TrimVideoUseCase(),
-        deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository),
-        photoLibraryService: container.photoLibraryService
+        deleteVideoAssetUseCase: DeleteVideoAssetUseCase(
+            repository: container.projectRepository,
+            localVideoStorage: container.localVideoStorage
+        ),
+        photoLibraryService: container.photoLibraryService,
+        localVideoStorage: container.localVideoStorage
     )
     RecordingView(viewModel: viewModel)
 }
@@ -359,12 +496,19 @@ private struct RecordingPreviewWrapper: View {
         )
         let vm = RecordingViewModel(
             project: project,
-            saveVideoAssetUseCase: SaveVideoAssetUseCase(repository: container.projectRepository),
+            saveVideoAssetUseCase: SaveVideoAssetUseCase(
+                repository: container.projectRepository,
+                localVideoStorage: container.localVideoStorage
+            ),
             generateGuideImageUseCase: GenerateGuideImageUseCase(repository: container.imagenRepository),
             analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
             trimVideoUseCase: TrimVideoUseCase(),
-            deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository),
-            photoLibraryService: container.photoLibraryService
+            deleteVideoAssetUseCase: DeleteVideoAssetUseCase(
+                repository: container.projectRepository,
+                localVideoStorage: container.localVideoStorage
+            ),
+            photoLibraryService: container.photoLibraryService,
+            localVideoStorage: container.localVideoStorage
         )
         vm.isRecording = true
         vm.recordingDuration = 5.5
@@ -395,12 +539,19 @@ private struct RecordingPreviewWrapper: View {
     )
     let viewModel = RecordingViewModel(
         project: project,
-        saveVideoAssetUseCase: SaveVideoAssetUseCase(repository: container.projectRepository),
+        saveVideoAssetUseCase: SaveVideoAssetUseCase(
+            repository: container.projectRepository,
+            localVideoStorage: container.localVideoStorage
+        ),
         generateGuideImageUseCase: GenerateGuideImageUseCase(repository: container.imagenRepository),
         analyzeVideoUseCase: AnalyzeVideoUseCase(repository: container.geminiRepository),
         trimVideoUseCase: TrimVideoUseCase(),
-        deleteVideoAssetUseCase: DeleteVideoAssetUseCase(repository: container.projectRepository),
-        photoLibraryService: container.photoLibraryService
+        deleteVideoAssetUseCase: DeleteVideoAssetUseCase(
+            repository: container.projectRepository,
+            localVideoStorage: container.localVideoStorage
+        ),
+        photoLibraryService: container.photoLibraryService,
+        localVideoStorage: container.localVideoStorage
     )
     RecordingView(viewModel: viewModel)
 }

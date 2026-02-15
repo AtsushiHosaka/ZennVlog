@@ -11,4 +11,10 @@ protocol PhotoLibraryServiceProtocol: Sendable {
     /// - Throws: 保存に失敗した場合のエラー
     func saveVideo(at url: URL) async throws
     func saveVideoToAlbum(videoURL: URL, projectName: String) async throws -> String
+
+    /// 写真ライブラリ上の動画を一時ファイルとして書き出す
+    /// - Parameter assetIdentifier: PHAssetのlocalIdentifier
+    /// - Returns: 一時ファイルURL
+    /// - Throws: 取得または書き出しに失敗した場合のエラー
+    func exportVideoToTemporaryFile(assetIdentifier: String) async throws -> URL
 }

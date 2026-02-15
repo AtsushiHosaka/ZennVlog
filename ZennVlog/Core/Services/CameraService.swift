@@ -1,8 +1,10 @@
 import Foundation
 import AVFoundation
 import Combine
+import OSLog
 
 final class CameraService: NSObject, ObservableObject {
+    private let logger = Logger(subsystem: "ZennVlog", category: "CameraService")
     
     enum PermissionState {
         case unknown
@@ -136,7 +138,7 @@ final class CameraService: NSObject, ObservableObject {
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("recording-\(UUID().uuidString).mov")
             
-            print("startRecording url:", url)
+            self.logger.debug("startRecording url=\(url.path, privacy: .public)")
             self.movieOutput.startRecording(to: url, recordingDelegate: self)
             
             DispatchQueue.main.async {
@@ -202,7 +204,7 @@ extension CameraService: AVCaptureFileOutputRecordingDelegate {
             self.isStartingRecording = false
             
             if let error {
-                print("Recording failed:", error)
+                self.logger.error("Recording failed: \(error.localizedDescription, privacy: .public)")
                 return
             }
             

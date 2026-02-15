@@ -4,109 +4,112 @@ import SwiftUI
 struct PreviewView: View {
     @State var viewModel: PreviewViewModel
     let container: DIContainer
-
     @Environment(\.dismiss) private var dismiss
+
     @State private var showShareView = false
     @State private var exportedURL: URL?
     @State private var isPreviewScrubbing = false
     @State private var previewScrubStartTime: Double = 0
-    @State private var controlsPanelHeight: CGFloat = 0
     @State private var isDraggingSubtitle = false
-    @State private var presentedSubtitleSheet: SubtitleSheetState?
 
     var body: some View {
-        NavigationStack {
-            ZStack(alignment: .bottom) {
+        GeometryReader { proxy in
+            VStack(spacing: 12) {
                 previewBackground
+                    .aspectRatio(9 / 16, contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: proxy.size.height * 0.58)
+                    .background(Color.black)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
 
                 controlsPanel
-            }
-            .background(Color.black.ignoresSafeArea())
-            .navigationTitle("プレビュー")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "chevron.left")
-                    }
-                }
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
 
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        Task {
-                            await handleExport()
-                        }
-                    } label: {
-                        if viewModel.isExporting {
-                            ProgressView()
-                        } else {
-                            Image(systemName: "square.and.arrow.up")
-                        }
-                    }
-                    .disabled(viewModel.isExporting)
-                }
+                Spacer(minLength: 0)
             }
-            .sheet(item: $presentedSubtitleSheet) { state in
-                SubtitleEditSheet(
-                    initialState: state,
-                    maxDuration: max(viewModel.duration, 0),
-                    onSave: { draft in
-                        let success = await viewModel.saveSubtitle(draft)
-                        if success {
-                            presentedSubtitleSheet = nil
-                        }
-                        return success
-                    },
-                    onDelete: { subtitleId in
-                        let success = await viewModel.deleteSubtitle(subtitleId: subtitleId)
-                        if success {
-                            presentedSubtitleSheet = nil
-                        }
-                        return success
-                    },
-                    onDismiss: {
-                        presentedSubtitleSheet = nil
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+        }
+        .background(Color.black.ignoresSafeArea())
+        .navigationTitle("プレビュー")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    Task {
+                        await handleExport()
+                    }
+                } label: {
+                    if viewModel.isExporting {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+                .disabled(viewModel.isExporting)
+            }
+        }
+        .sheet(item: subtitleSheetBinding) { state in
+            SubtitleEditSheet(
+                initialState: state,
+                onSave: { draft in
+                    let errorMessage = await viewModel.saveSubtitle(draft)
+                    if errorMessage == nil {
                         viewModel.dismissSubtitleSheet()
                     }
-                )
-            }
-            .sheet(isPresented: $viewModel.showBGMSettingsSheet) {
-                BGMSettingsSheet(
-                    bgmTracks: viewModel.bgmTracks,
-                    initialSelectedBGM: viewModel.selectedBGM,
-                    initialVolume: viewModel.bgmVolume,
-                    onSave: { track, volume in
-                        await viewModel.saveBGMSettings(track: track, volume: volume)
-                    },
-                    onDismiss: {
-                        viewModel.showBGMSettingsSheet = false
+                    return errorMessage
+                },
+                onDelete: { subtitleId in
+                    let success = await viewModel.deleteSubtitle(subtitleId: subtitleId)
+                    if success {
+                        viewModel.dismissSubtitleSheet()
                     }
-                )
-            }
-            .fullScreenCover(isPresented: $showShareView) {
-                if let exportedURL {
-                    ShareView(
-                        viewModel: ShareViewModel(
-                            project: viewModel.project,
-                            exportedVideoURL: exportedURL,
-                            photoLibrary: container.photoLibraryService,
-                            activityController: container.activityControllerService
-                        )
+                    return success
+                },
+                onDismiss: {
+                    viewModel.dismissSubtitleSheet()
+                }
+            )
+        }
+        .sheet(isPresented: $viewModel.showBGMSettingsSheet) {
+            BGMSettingsSheet(
+                bgmTracks: viewModel.bgmTracks,
+                initialSelectedBGM: viewModel.selectedBGM,
+                initialVolume: viewModel.bgmVolume,
+                onSave: { track, volume in
+                    await viewModel.saveBGMSettings(track: track, volume: volume)
+                },
+                onDismiss: {
+                    viewModel.showBGMSettingsSheet = false
+                }
+            )
+        }
+        .fullScreenCover(isPresented: $showShareView) {
+            if let exportedURL {
+                ShareView(
+                    viewModel: ShareViewModel(
+                        project: viewModel.project,
+                        exportedVideoURL: exportedURL,
+                        photoLibrary: container.photoLibraryService,
+                        activityController: container.activityControllerService
                     )
-                } else {
-                    Text("共有する動画が見つかりません")
-                }
+                )
+            } else {
+                Text("共有する動画が見つかりません")
             }
-            .alert("エラー", isPresented: .constant(viewModel.errorMessage != nil)) {
-                Button("OK") {
-                    viewModel.clearError()
-                }
-            } message: {
-                if let errorMessage = viewModel.errorMessage {
-                    Text(errorMessage)
-                }
+        }
+        .alert("エラー", isPresented: .constant(viewModel.errorMessage != nil)) {
+            Button("OK") {
+                viewModel.clearError()
+            }
+        } message: {
+            if let errorMessage = viewModel.errorMessage {
+                Text(errorMessage)
             }
         }
         .task {
@@ -122,7 +125,6 @@ struct PreviewView: View {
 
             ZStack {
                 VideoPlayerView(player: viewModel.player)
-                    .aspectRatio(16 / 9, contentMode: .fill)
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .clipped()
                     .background(Color.black)
@@ -131,7 +133,7 @@ struct PreviewView: View {
 
                 SubtitleOverlay(
                     subtitle: activeSubtitle,
-                    bottomBlockedInset: controlsPanelHeight + 6,
+                    bottomBlockedInset: 12,
                     onDragStart: {
                         isDraggingSubtitle = true
                         if isPreviewScrubbing {
@@ -154,11 +156,35 @@ struct PreviewView: View {
                 .frame(width: proxy.size.width, height: proxy.size.height)
             }
         }
-        .ignoresSafeArea(edges: .top)
     }
 
     private var controlsPanel: some View {
         VStack(spacing: 10) {
+            if !viewModel.missingSegmentOrders.isEmpty || viewModel.recoveryNotice != nil {
+                VStack(alignment: .leading, spacing: 8) {
+                    if !viewModel.missingSegmentOrders.isEmpty {
+                        Text("不足素材: \(formattedMissingSegments)")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(.white)
+                    }
+
+                    if let recoveryNotice = viewModel.recoveryNotice {
+                        Text(recoveryNotice)
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.92))
+                    }
+
+                    Button("Recordingで差し替え") {
+                        dismiss()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.white.opacity(0.2))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(Color.orange.opacity(0.2), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
             HStack(spacing: 12) {
                 Button {
                     viewModel.togglePlayPause()
@@ -197,8 +223,7 @@ struct PreviewView: View {
             LinkedTimelineTracksView(
                 duration: viewModel.duration,
                 currentTime: viewModel.currentTime,
-                videoSegments: viewModel.timelineSegments,
-                subtitles: viewModel.subtitles,
+                segmentItems: viewModel.segmentTimelineItems,
                 onSeek: { time in
                     viewModel.seek(to: time)
                 },
@@ -208,21 +233,13 @@ struct PreviewView: View {
                 onEndScrub: {
                     viewModel.endTimelineScrub()
                 },
-                onSubtitleTap: { subtitle in
-                    viewModel.showEditSubtitleSheet(subtitle)
-                    presentedSubtitleSheet = viewModel.subtitleSheetState
-                },
-                onAddSubtitle: {
-                    viewModel.showNewSubtitleSheet(at: viewModel.currentTime)
-                    presentedSubtitleSheet = viewModel.subtitleSheetState
+                onSegmentSubtitleTap: { segmentOrder in
+                    viewModel.showSubtitleSheet(for: segmentOrder)
                 }
             )
         }
         .padding(12)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .padding(.horizontal, 10)
-        .padding(.bottom, 8)
-        .readHeight { controlsPanelHeight = $0 }
     }
 
     // MARK: - Helpers
@@ -243,7 +260,7 @@ struct PreviewView: View {
                     viewModel.beginTimelineScrub()
                 }
 
-                let pointsPerSecond: CGFloat = 70
+                let pointsPerSecond: CGFloat = 40
                 let deltaSeconds = Double(-value.translation.width / pointsPerSecond)
                 viewModel.seek(to: max(0, previewScrubStartTime + deltaSeconds))
             }
@@ -261,25 +278,25 @@ struct PreviewView: View {
         let secs = total % 60
         return String(format: "%d:%02d", mins, secs)
     }
-}
 
-private struct ControlsPanelHeightPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    private var formattedMissingSegments: String {
+        viewModel.missingSegmentOrders
+            .sorted()
+            .map { "S\($0 + 1)" }
+            .joined(separator: ", ")
     }
-}
 
-private extension View {
-    func readHeight(_ onChange: @escaping (CGFloat) -> Void) -> some View {
-        background(
-            GeometryReader { proxy in
-                Color.clear
-                    .preference(key: ControlsPanelHeightPreferenceKey.self, value: proxy.size.height)
+    private var subtitleSheetBinding: Binding<SubtitleSheetState?> {
+        Binding(
+            get: { viewModel.subtitleSheetState },
+            set: { nextValue in
+                if let nextValue {
+                    viewModel.subtitleSheetState = nextValue
+                } else {
+                    viewModel.dismissSubtitleSheet()
+                }
             }
         )
-        .onPreferenceChange(ControlsPanelHeightPreferenceKey.self, perform: onChange)
     }
 }
 
@@ -312,7 +329,9 @@ private extension View {
         downloadBGMUseCase: DownloadBGMUseCase(repository: container.bgmRepository),
         updateSubtitlePositionUseCase: UpdateSubtitlePositionUseCase(repository: container.projectRepository)
     )
-    PreviewView(viewModel: viewModel, container: container)
+    NavigationStack {
+        PreviewView(viewModel: viewModel, container: container)
+    }
 }
 
 #Preview("書き出し中") {
@@ -343,6 +362,8 @@ private struct ExportingPreviewWrapper: View {
     }
 
     var body: some View {
-        PreviewView(viewModel: viewModel, container: container)
+        NavigationStack {
+            PreviewView(viewModel: viewModel, container: container)
+        }
     }
 }

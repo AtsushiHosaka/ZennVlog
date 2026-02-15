@@ -9,21 +9,25 @@ final class ProjectListViewModel {
 
     private(set) var projects: [Project] = []
     var isLoading: Bool = false
+    var isDeletingAllProjects: Bool = false
     var errorMessage: String?
     var projectForRecording: Project?
     var showRecording: Bool = false
 
     private let fetchProjectsUseCase: FetchProjectsUseCase
     private let createProjectFromTemplateUseCase: CreateProjectFromTemplateUseCase
+    private let deleteAllProjectsUseCase: DeleteAllProjectsUseCase
 
     // MARK: - Init
 
     init(
         fetchProjectsUseCase: FetchProjectsUseCase,
-        createProjectFromTemplateUseCase: CreateProjectFromTemplateUseCase
+        createProjectFromTemplateUseCase: CreateProjectFromTemplateUseCase,
+        deleteAllProjectsUseCase: DeleteAllProjectsUseCase
     ) {
         self.fetchProjectsUseCase = fetchProjectsUseCase
         self.createProjectFromTemplateUseCase = createProjectFromTemplateUseCase
+        self.deleteAllProjectsUseCase = deleteAllProjectsUseCase
     }
 
     // MARK: - Public Methods
@@ -60,6 +64,20 @@ final class ProjectListViewModel {
             showRecording = true
         } catch {
             errorMessage = "プロジェクトの作成に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    func deleteAllProjects() async {
+        guard !isDeletingAllProjects else { return }
+        isDeletingAllProjects = true
+        errorMessage = nil
+        defer { isDeletingAllProjects = false }
+
+        do {
+            try await deleteAllProjectsUseCase.execute()
+            await loadProjects()
+        } catch {
+            errorMessage = "プロジェクトの全削除に失敗しました: \(error.localizedDescription)"
         }
     }
 }

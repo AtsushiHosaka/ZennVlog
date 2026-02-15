@@ -33,7 +33,7 @@ struct ToolExecutionStatus: Identifiable, Sendable {
         switch toolName {
         case "templateSearch":
             return state == .executing ? "テンプレートを検索中..." : "テンプレート検索完了"
-        case "videoAnalysis":
+        case "videoSummary", "videoAnalysis":
             return state == .executing ? "動画を分析中..." : "動画分析完了"
         case "generateCustomTemplate":
             return state == .executing ? "オリジナルテンプレートを作成中..." : "テンプレート作成完了"

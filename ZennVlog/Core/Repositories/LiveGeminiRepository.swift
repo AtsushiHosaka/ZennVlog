@@ -70,7 +70,8 @@ actor LiveGeminiRepository: GeminiRepositoryProtocol {
             return GeminiChatResponse(
                 text: payload.text,
                 suggestedTemplates: [payload.suggestedTemplate].compactMap { $0 },
-                quickReplies: []
+                quickReplies: [],
+                analyzedVideoResult: nil
             )
         } catch let error as GeminiRepositoryError {
             throw error

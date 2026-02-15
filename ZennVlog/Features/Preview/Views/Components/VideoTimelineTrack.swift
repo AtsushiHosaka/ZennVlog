@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 struct VideoTimelineTrack: View {
-    let segments: [VideoTimelineSegment]
+    let segmentItems: [SegmentTimelineItem]
     let duration: Double
     let pointsPerSecond: CGFloat
 
@@ -12,10 +12,10 @@ struct VideoTimelineTrack: View {
                 .fill(Color(UIColor.secondarySystemBackground).opacity(0.95))
                 .frame(width: timelineWidth, height: 74)
 
-            ForEach(segments) { segment in
-                VideoTimelineSegmentCell(localFileURL: segment.localFileURL, label: "S\(segment.order + 1)")
-                    .frame(width: width(for: segment), height: 62)
-                    .offset(x: xOffset(for: segment), y: 6)
+            ForEach(segmentItems) { item in
+                VideoTimelineSegmentCell(localFileURL: item.videoLocalFileURL, label: "S\(item.segmentOrder + 1)")
+                    .frame(width: width(for: item), height: 62)
+                    .offset(x: xOffset(for: item), y: 6)
             }
         }
         .frame(width: timelineWidth, height: 74, alignment: .leading)
@@ -25,12 +25,12 @@ struct VideoTimelineTrack: View {
         max(CGFloat(duration) * pointsPerSecond, 240)
     }
 
-    private func xOffset(for segment: VideoTimelineSegment) -> CGFloat {
-        CGFloat(segment.startSeconds) * pointsPerSecond
+    private func xOffset(for item: SegmentTimelineItem) -> CGFloat {
+        CGFloat(item.startSeconds) * pointsPerSecond
     }
 
-    private func width(for segment: VideoTimelineSegment) -> CGFloat {
-        max(CGFloat(segment.duration) * pointsPerSecond, 50)
+    private func width(for item: SegmentTimelineItem) -> CGFloat {
+        max(CGFloat(item.duration) * pointsPerSecond, 50)
     }
 }
 
@@ -85,10 +85,34 @@ private struct VideoTimelineSegmentCell: View {
 
 #Preview {
     VideoTimelineTrack(
-        segments: [
-            VideoTimelineSegment(id: 0, order: 0, startSeconds: 0, endSeconds: 4, localFileURL: nil),
-            VideoTimelineSegment(id: 1, order: 1, startSeconds: 4, endSeconds: 11, localFileURL: nil),
-            VideoTimelineSegment(id: 2, order: 2, startSeconds: 11, endSeconds: 18, localFileURL: nil)
+        segmentItems: [
+            SegmentTimelineItem(
+                id: 0,
+                segmentOrder: 0,
+                startSeconds: 0,
+                endSeconds: 4,
+                videoLocalFileURL: nil,
+                subtitleId: nil,
+                subtitleText: nil
+            ),
+            SegmentTimelineItem(
+                id: 1,
+                segmentOrder: 1,
+                startSeconds: 4,
+                endSeconds: 11,
+                videoLocalFileURL: nil,
+                subtitleId: nil,
+                subtitleText: "移動"
+            ),
+            SegmentTimelineItem(
+                id: 2,
+                segmentOrder: 2,
+                startSeconds: 11,
+                endSeconds: 18,
+                videoLocalFileURL: nil,
+                subtitleId: nil,
+                subtitleText: nil
+            )
         ],
         duration: 18,
         pointsPerSecond: 36

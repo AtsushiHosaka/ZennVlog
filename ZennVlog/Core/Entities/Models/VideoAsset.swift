@@ -17,7 +17,8 @@ final class VideoAsset {
         localFileURL: String = "",
         duration: Double = 0,
         trimStartSeconds: Double = 0.0,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        photoAssetIdentifier: String? = nil
     ) {
         self.id = id
         self.segmentOrder = segmentOrder
@@ -25,5 +26,6 @@ final class VideoAsset {
         self.duration = duration
         self.trimStartSeconds = trimStartSeconds
         self.createdAt = createdAt
+        self.photoAssetIdentifier = photoAssetIdentifier
     }
 }

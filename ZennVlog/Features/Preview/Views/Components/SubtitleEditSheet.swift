@@ -1,28 +1,27 @@
 import SwiftUI
 
 struct SubtitleEditSheet: View {
-    let maxDuration: Double
-    let onSave: (SubtitleSheetState) async -> Bool
+    let onSave: (SubtitleSheetState) async -> String?
     let onDelete: (UUID) async -> Bool
     let onDismiss: () -> Void
 
     @State private var draft: SubtitleSheetState
+    @State private var subtitleText: String
     @State private var isProcessing = false
     @State private var localErrorMessage: String?
-    @FocusState private var isFocused: Bool
+    @FocusState private var isTextFocused: Bool
 
     init(
         initialState: SubtitleSheetState,
-        maxDuration: Double,
-        onSave: @escaping (SubtitleSheetState) async -> Bool,
+        onSave: @escaping (SubtitleSheetState) async -> String?,
         onDelete: @escaping (UUID) async -> Bool,
         onDismiss: @escaping () -> Void
     ) {
-        self.maxDuration = maxDuration
         self.onSave = onSave
         self.onDelete = onDelete
         self.onDismiss = onDismiss
         _draft = State(initialValue: initialState)
+        _subtitleText = State(initialValue: initialState.text)
     }
 
     var body: some View {
@@ -34,48 +33,36 @@ struct SubtitleEditSheet: View {
                 }
 
                 Section("テロップ") {
-                    TextField("テキストを入力", text: $draft.text, axis: .vertical)
-                        .lineLimit(2...4)
-                        .focused($isFocused)
+                    Text("空欄で保存すると、このセグメントのテロップを削除します。")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+
+                    ZStack(alignment: .topLeading) {
+                        if subtitleText.isEmpty {
+                            Text("テキストを入力（任意）")
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 4)
+                                .padding(.top, 8)
+                        }
+
+                        TextEditor(text: $subtitleText)
+                            .focused($isTextFocused)
+                            .frame(minHeight: 96)
+                    }
                 }
 
-                Section("表示時間") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("開始")
-                            Spacer()
-                            Text(formatTime(draft.startSeconds))
-                                .monospacedDigit()
-                        }
-                        Slider(
-                            value: Binding(
-                                get: { draft.startSeconds },
-                                set: { newValue in
-                                    draft.startSeconds = min(newValue, max(draft.endSeconds - 0.1, 0))
-                                }
-                            ),
-                            in: 0...max(maxDuration - 0.1, 0),
-                            step: 0.1
-                        )
+                Section("表示時間（固定）") {
+                    HStack {
+                        Text("開始")
+                        Spacer()
+                        Text(formatTime(draft.startSeconds))
+                            .monospacedDigit()
                     }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("終了")
-                            Spacer()
-                            Text(formatTime(draft.endSeconds))
-                                .monospacedDigit()
-                        }
-                        Slider(
-                            value: Binding(
-                                get: { draft.endSeconds },
-                                set: { newValue in
-                                    draft.endSeconds = max(newValue, min(draft.startSeconds + 0.1, maxDuration))
-                                }
-                            ),
-                            in: min(draft.startSeconds + 0.1, maxDuration)...maxDuration,
-                            step: 0.1
-                        )
+                    HStack {
+                        Text("終了")
+                        Spacer()
+                        Text(formatTime(draft.endSeconds))
+                            .monospacedDigit()
                     }
                 }
 
@@ -120,25 +107,34 @@ struct SubtitleEditSheet: View {
                             Text("保存")
                         }
                     }
-                    .disabled(isProcessing || draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(isProcessing)
                 }
+            }
+            .onAppear {
+                isTextFocused = true
             }
         }
     }
 
     private var timeRangeTitle: String {
-        "\(formatTime(draft.startSeconds)) - \(formatTime(draft.endSeconds)) のテロップ"
+        "S\(draft.segmentOrder + 1) のテロップ"
     }
 
     private func handleSave() async {
-        isFocused = false
+        await MainActor.run {
+            isTextFocused = false
+        }
+        await Task.yield()
+
+        let trimmedText = subtitleText.trimmingCharacters(in: .whitespacesAndNewlines)
         localErrorMessage = nil
         isProcessing = true
         defer { isProcessing = false }
 
-        let success = await onSave(draft)
-        if !success {
-            localErrorMessage = "保存できませんでした。時間範囲と重複を確認してください。"
+        var saveDraft = draft
+        saveDraft.text = trimmedText
+        if let errorMessage = await onSave(saveDraft) {
+            localErrorMessage = errorMessage
         }
     }
 
@@ -164,13 +160,13 @@ struct SubtitleEditSheet: View {
 #Preview {
     SubtitleEditSheet(
         initialState: SubtitleSheetState(
+            segmentOrder: 1,
             subtitleId: UUID(),
             startSeconds: 8,
             endSeconds: 12,
             text: "テストテロップ"
         ),
-        maxDuration: 40,
-        onSave: { _ in true },
+        onSave: { _ in nil },
         onDelete: { _ in true },
         onDismiss: {}
     )

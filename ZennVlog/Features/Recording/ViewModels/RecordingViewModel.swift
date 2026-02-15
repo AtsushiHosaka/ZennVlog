@@ -1,10 +1,13 @@
+import AVFoundation
 import Foundation
 import Observation
+import OSLog
 import UIKit
 
 @MainActor
 @Observable
 final class RecordingViewModel {
+    private let logger = Logger(subsystem: "ZennVlog", category: "RecordingViewModel")
 
     // MARK: - Properties
 
@@ -19,6 +22,7 @@ final class RecordingViewModel {
     var showTrimEditor: Bool = false
     var videoToTrim: URL?
     var videoScenes: [(timestamp: Double, description: String)] = []
+    var selectedVideoDuration: Double = 0
     var isAnalyzingVideo: Bool = false
     var analysisProgress: Double = 0
 
@@ -32,6 +36,14 @@ final class RecordingViewModel {
         project.videoAssets.filter { $0.segmentOrder != nil }
     }
 
+    var recordedVideoAssets: [VideoAsset] {
+        let playableOrders = playableSegmentOrders
+        return videoAssets.filter { asset in
+            guard let order = asset.segmentOrder else { return false }
+            return playableOrders.contains(order)
+        }
+    }
+
     var stockVideoAssets: [VideoAsset] {
         project.videoAssets.filter { $0.segmentOrder == nil }
     }
@@ -43,13 +55,13 @@ final class RecordingViewModel {
 
     var canProceedToPreview: Bool {
         guard !segments.isEmpty else { return false }
-        let recordedOrders = Set(videoAssets.compactMap { $0.segmentOrder })
-        return segments.allSatisfy { recordedOrders.contains($0.order) }
+        let assignedOrders = Set(videoAssets.compactMap(\.segmentOrder))
+        return segments.allSatisfy { assignedOrders.contains($0.order) }
     }
 
     var firstEmptySegmentOrder: Int? {
-        let recordedOrders = Set(videoAssets.compactMap { $0.segmentOrder })
-        return segments.first { !recordedOrders.contains($0.order) }?.order
+        let playableOrders = playableSegmentOrders
+        return segments.first { !playableOrders.contains($0.order) }?.order
     }
 
     // MARK: - Dependencies
@@ -59,6 +71,7 @@ final class RecordingViewModel {
     private let analyzeVideoUseCase: AnalyzeVideoUseCase
     private let trimVideoUseCase: TrimVideoUseCase
     private let deleteVideoAssetUseCase: DeleteVideoAssetUseCase
+    private let workflowManager: RecordingWorkflowManager?
 
     // MARK: - Private Properties
 
@@ -67,6 +80,7 @@ final class RecordingViewModel {
     
     // MARK: - Private Protocol
     private let photoLibraryService: PhotoLibraryServiceProtocol
+    private let localVideoStorage: LocalVideoStorage
 
     // MARK: - Init
 
@@ -77,7 +91,9 @@ final class RecordingViewModel {
         analyzeVideoUseCase: AnalyzeVideoUseCase,
         trimVideoUseCase: TrimVideoUseCase,
         deleteVideoAssetUseCase: DeleteVideoAssetUseCase,
-        photoLibraryService: PhotoLibraryServiceProtocol
+        photoLibraryService: PhotoLibraryServiceProtocol,
+        localVideoStorage: LocalVideoStorage,
+        workflowManager: RecordingWorkflowManager? = nil
     ) {
         self.project = project
         self.saveVideoAssetUseCase = saveVideoAssetUseCase
@@ -86,6 +102,8 @@ final class RecordingViewModel {
         self.trimVideoUseCase = trimVideoUseCase
         self.deleteVideoAssetUseCase = deleteVideoAssetUseCase
         self.photoLibraryService = photoLibraryService
+        self.localVideoStorage = localVideoStorage
+        self.workflowManager = workflowManager
     }
 
     // MARK: - Public Methods
@@ -98,7 +116,11 @@ final class RecordingViewModel {
     }
 
     func isSegmentRecorded(_ segmentOrder: Int) -> Bool {
-        videoAssets.contains { $0.segmentOrder == segmentOrder }
+        playableSegmentOrders.contains(segmentOrder)
+    }
+
+    func isSegmentMissing(_ segmentOrder: Int) -> Bool {
+        !isSegmentRecorded(segmentOrder)
     }
 
     func selectSegment(at index: Int) {
@@ -133,23 +155,32 @@ final class RecordingViewModel {
                 errorMessage = "録画ファイルが見つかりません"
                 return
             }
-            
-            let url = URL(fileURLWithPath: localFileURL)
-            
-            // ✅ カメラロール（プロジェクトアルバム）へ保存
-            let assetId = try await photoLibraryService.saveVideoToAlbum(
-                videoURL: url,
+
+            let sourceURL = URL(fileURLWithPath: localFileURL)
+            let videoAssetId = UUID()
+            let persistentURL = try localVideoStorage.persistVideo(
+                sourceURL: sourceURL,
+                projectId: project.id,
+                assetId: videoAssetId
+            )
+            logger.info("Prepared persistent video for recording: \(persistentURL.path, privacy: .public)")
+
+            let photoAssetIdentifier = try await photoLibraryService.saveVideoToAlbum(
+                videoURL: persistentURL,
                 projectName: project.name
             )
-            
+
             let segmentOrder = canRecord(for: currentSegment.order) ? currentSegment.order : nil
-            
+
             try await saveVideoAssetUseCase.execute(
                 project: project,
-                localFileURL: localFileURL,
+                localFileURL: persistentURL,
                 duration: duration,
-                segmentOrder: segmentOrder
+                segmentOrder: segmentOrder,
+                photoAssetIdentifier: photoAssetIdentifier,
+                videoAssetId: videoAssetId
             )
+            await workflowManager?.updateStatusIfReadyForPreview(project: project)
             
             // 次の空白セグメントに移動
             if let nextEmpty = firstEmptySegmentOrder,
@@ -157,7 +188,6 @@ final class RecordingViewModel {
                 currentSegmentIndex = nextIndex
             }
         } catch {
-            print("saveRecordedVideo error:", error)
             errorMessage = "動画の保存に失敗しました: \(error)"
         }
     }
@@ -171,11 +201,11 @@ final class RecordingViewModel {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let self else { return }
-            guard self.isAnalyzingVideo else { return }
-
             let progress = notification.userInfo?[VideoAnalysisProgressUserInfoKey.progress] as? Double ?? 0
-            self.analysisProgress = min(max(progress, 0), 1)
+            Task { @MainActor [weak self] in
+                guard let self, self.isAnalyzingVideo else { return }
+                self.analysisProgress = min(max(progress, 0), 1)
+            }
         }
 
         defer {
@@ -189,6 +219,13 @@ final class RecordingViewModel {
         }
 
         do {
+            let avAsset = AVURLAsset(url: url)
+            if let duration = try? await avAsset.load(.duration) {
+                selectedVideoDuration = CMTimeGetSeconds(duration)
+            } else {
+                selectedVideoDuration = 0
+            }
+
             // 動画を分析
             let result = try await analyzeVideoUseCase.execute(videoURL: url)
 
@@ -202,6 +239,7 @@ final class RecordingViewModel {
             showTrimEditor = true
             analysisProgress = 1
         } catch {
+            selectedVideoDuration = 0
             errorMessage = "動画の分析に失敗しました"
         }
     }
@@ -221,20 +259,39 @@ final class RecordingViewModel {
                 duration: segmentDuration
             )
 
+            let videoAssetId = UUID()
+            let persistentURL = try localVideoStorage.persistVideo(
+                sourceURL: trimmedURL,
+                projectId: project.id,
+                assetId: videoAssetId
+            )
+            logger.info("Prepared persistent video for trim: \(persistentURL.path, privacy: .public)")
+
             try await saveVideoAssetUseCase.execute(
                 project: project,
-                localFileURL: trimmedURL.path,
+                localFileURL: persistentURL,
                 duration: segmentDuration,
                 segmentOrder: segmentOrder,
-                trimStartSeconds: startSeconds
+                trimStartSeconds: startSeconds,
+                videoAssetId: videoAssetId
             )
+            await workflowManager?.updateStatusIfReadyForPreview(project: project)
 
             showTrimEditor = false
             videoToTrim = nil
             videoScenes = []
+            selectedVideoDuration = 0
         } catch {
             errorMessage = "動画のトリムに失敗しました"
         }
+    }
+
+    func cancelTrimEditor() {
+        showTrimEditor = false
+        videoToTrim = nil
+        videoScenes = []
+        selectedVideoDuration = 0
+        analysisProgress = 0
     }
 
     func deleteVideoAsset(for segmentOrder: Int) async {
@@ -265,21 +322,27 @@ final class RecordingViewModel {
         }
 
         do {
-            // ストックから削除
-            try await deleteVideoAssetUseCase.execute(
-                project: project,
-                videoAssetId: asset.id
-            )
+            guard let sourceURL = VideoAssetPathResolver.resolveLocalURL(from: asset.localFileURL) else {
+                errorMessage = "割り当て元の動画ファイルが見つかりません"
+                return
+            }
 
             // セグメントに割り当て
             let segmentDuration = segment.endSeconds - segment.startSeconds
             try await saveVideoAssetUseCase.execute(
                 project: project,
-                localFileURL: asset.localFileURL,
+                localFileURL: sourceURL,
                 duration: segmentDuration,
                 segmentOrder: segmentOrder,
                 trimStartSeconds: asset.trimStartSeconds
             )
+
+            // ストックから削除（先に割り当てることで同一パス参照中の削除を防ぐ）
+            try await deleteVideoAssetUseCase.execute(
+                project: project,
+                videoAssetId: asset.id
+            )
+            await workflowManager?.updateStatusIfReadyForPreview(project: project)
         } catch {
             errorMessage = "動画の割り当てに失敗しました"
         }
@@ -339,5 +402,17 @@ final class RecordingViewModel {
 
         let segmentDuration = segment.endSeconds - segment.startSeconds
         return totalWidth * CGFloat(segmentDuration / totalDuration)
+    }
+
+    private var playableSegmentOrders: Set<Int> {
+        Set(
+            videoAssets.compactMap { asset in
+                guard let order = asset.segmentOrder else { return nil }
+                guard VideoAssetPathResolver.resolveLocalURL(from: asset.localFileURL) != nil else {
+                    return nil
+                }
+                return order
+            }
+        )
     }
 }
